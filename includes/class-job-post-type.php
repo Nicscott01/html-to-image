@@ -467,7 +467,10 @@ class Job_Post_Type {
                 <th><label for="csig_selector"><?php _e('CSS Selector', 'csig'); ?></label></th>
                 <td>
                     <input type="text" id="csig_selector" name="csig_selector" value="<?php echo esc_attr($selector); ?>" class="regular-text" />
-                    <p class="description"><?php _e('CSS selector for elements to capture (e.g., .csig-card, #my-id)', 'csig'); ?></p>
+                    <p class="description">
+                        <?php _e('CSS selector for elements to capture (e.g., .csig-card, #my-id)', 'csig'); ?><br>
+                        <strong><?php _e('Custom Filenames:', 'csig'); ?></strong> <?php _e('Add <code>csig-filename="filename"</code> attribute to elements for custom file names. Email addresses will be automatically sanitized (e.g., john@company.com becomes john-at-company-com).', 'csig'); ?>
+                    </p>
                 </td>
             </tr>
             <tr>

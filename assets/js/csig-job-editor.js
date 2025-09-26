@@ -6,6 +6,29 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
     }
     
+    // Helper function to sanitize filename from various sources
+    function sanitizeFilename(filename) {
+        if (!filename) {
+            return null;
+        }
+        
+        // If it looks like an email address, convert it
+        if (filename.includes('@')) {
+            // Convert email to filename: john.doe@company.com -> john-doe-at-company-com
+            filename = filename
+                .replace('@', '-at-')
+                .replace(/\./g, '-')
+                .toLowerCase();
+        }
+        
+        // General filename sanitization
+        return filename
+            .replace(/[^a-zA-Z0-9\-_]/g, '-') // Replace special chars with dashes
+            .replace(/--+/g, '-') // Replace multiple dashes with single dash
+            .replace(/^-+|-+$/g, '') // Remove leading/trailing dashes
+            .toLowerCase();
+    }
+    
     // Helper function to load Google Fonts into the iframe
     async function loadGoogleFonts(iframeDoc) {
         console.log('CSIG: Loading Google Fonts...');
@@ -208,6 +231,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 statusText.textContent = `Processing element ${i + 1} of ${elements.length}...`;
                 
                 console.log('CSIG: Processing element', i + 1, '/', elements.length);
+                
+                // Look for custom filename attribute
+                const customFilename = element.getAttribute('csig-filename') || 
+                                     element.getAttribute('data-csig-filename') ||
+                                     element.getAttribute('data-filename');
+                
+                const sanitizedFilename = sanitizeFilename(customFilename);
+                
+                console.log('CSIG: Custom filename found:', customFilename, '-> sanitized:', sanitizedFilename);
 
                 // Generate PNG if needed
                 if (format === 'raster' || format === 'both') {
@@ -231,6 +263,11 @@ document.addEventListener('DOMContentLoaded', function() {
                         formData.append('image_data', pngData);
                         formData.append('element_index', i);
                         formData.append('job_id', csigJobData.jobId);
+                        
+                        // Send custom filename if available
+                        if (sanitizedFilename) {
+                            formData.append('custom_filename', sanitizedFilename);
+                        }
 
                         const pngResponse = await fetch(csigJobData.ajaxUrl, {
                             method: 'POST',
@@ -282,6 +319,11 @@ document.addEventListener('DOMContentLoaded', function() {
                         formData.append('pdf_data', base64data);
                         formData.append('element_index', i);
                         formData.append('job_id', csigJobData.jobId);
+                        
+                        // Send custom filename if available
+                        if (sanitizedFilename) {
+                            formData.append('custom_filename', sanitizedFilename);
+                        }
 
                         const pdfResponse = await fetch(csigJobData.ajaxUrl, {
                             method: 'POST',
@@ -322,7 +364,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 fetch(csigJobData.ajaxUrl, {
                     method: 'POST',
-                    body: statsFormData
+                    body: statsFormData  // Fixed: was 'formData', now 'statsFormData'
                 });
             }
 
