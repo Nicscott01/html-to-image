@@ -19,6 +19,9 @@ class Job_Post_Type {
         add_filter('post_row_actions', array($this, 'add_run_job_action'), 10, 2);
         add_action('admin_enqueue_scripts', array($this, 'enqueue_job_scripts'));
         add_action('edit_form_after_title', array($this, 'add_job_interface'));
+
+        add_action('save_post_job', array($this, 'save_job_capture_meta')); // Add this line
+
     }
     
     public function register_post_type() {
@@ -69,14 +72,14 @@ class Job_Post_Type {
             'high'
         );
         
-        /*add_meta_box(
+        add_meta_box(
             'csig_job_capture',
             __('Live Preview & Capture', 'csig'),
             array($this, 'job_capture_meta_box'),
             self::POST_TYPE,
             'side',
             'high'
-        );*/
+        );
         
         add_meta_box(
             'csig_job_stats',
@@ -155,6 +158,56 @@ class Job_Post_Type {
         }
         
         $url = get_post_meta($post->ID, '_csig_url', true);
+        
+        if (!$url) {
+            ?>
+            <div class="notice notice-error inline" style="margin: 20px 0;">
+                <p><?php _e('Please add a URL in the Job Settings above before running this job.', 'csig'); ?></p>
+            </div>
+            <?php
+            return;
+        }
+        
+        // Just add a target div for the iframe - the sidebar controls will populate it
+        ?>
+        <div id="csig-iframe-container" style="margin: 20px 0;">
+            <!-- Iframe will be inserted here by the sidebar controls -->
+        </div>
+        
+        <style>
+        #csig-iframe-container {
+            overflow-x: auto;
+        }
+        @media (max-width: 1200px) {
+            #csig-iframe-container {
+                max-width: 100%;
+            }
+        }
+        #csig-iframe-container iframe {
+            border-radius: 4px;
+            transition: all 0.3s ease;
+            display: block;
+            margin: 0;
+        }
+        </style>
+        <?php
+    }
+
+
+    /**
+     * Display the job capture meta box
+     *
+     * @param WP_Post $post The post object
+     */
+    public function job_capture_meta_box($post) {
+        if ($post->post_status !== 'publish') {
+            ?>
+            <p style="color: #d63638; margin: 0;"><?php _e('Publish this job to enable capture functionality.', 'csig'); ?></p>
+            <?php
+            return;
+        }
+        
+        $url = get_post_meta($post->ID, '_csig_url', true);
         $selector = get_post_meta($post->ID, '_csig_selector', true) ?: '.csig-card';
         $output_format = get_post_meta($post->ID, '_csig_output_format', true) ?: 'raster';
         $image_quality = get_post_meta($post->ID, '_csig_image_quality', true) ?: 'high';
@@ -162,116 +215,95 @@ class Job_Post_Type {
         $pixel_ratio = $quality_map[$image_quality] ?? 2;
         $job_settings = self::get_job_settings($post->ID);
         
+        if (!$url) {
+            ?>
+            <p style="color: #d63638; margin: 0 0 10px 0;"><?php _e('Please add a URL in the Job Settings above.', 'csig'); ?></p>
+            <?php
+            return;
+        }
         ?>
-        <div id="csig-job-interface" style="margin: 20px 0;">
-            <?php if (!$url): ?>
-                <div class="notice notice-error inline" style="margin-bottom: 20px;">
-                    <p><?php _e('Please add a URL in the Job Settings above before running this job.', 'csig'); ?></p>
-                </div>
-            <?php else: ?>
-                <!-- Job Summary -->
-                <div id="csig-job-summary" style="margin-bottom: 20px; padding: 15px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px;">
-                    <h2 style="margin-top: 0; margin-bottom: 10px;"><?php _e('Live Preview & Capture', 'csig'); ?></h2>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; font-size: 14px; margin-bottom: 15px;">
-                        <div>
-                            <strong><?php _e('URL:', 'csig'); ?></strong><br>
-                            <a href="<?php echo esc_url($url); ?>" target="_blank" style="word-break: break-all;"><?php echo esc_html($url); ?></a>
-                        </div>
-                        <div>
-                            <strong><?php _e('Selector:', 'csig'); ?></strong><br>
-                            <code><?php echo esc_html($selector); ?></code>
-                        </div>
-                        <div>
-                            <strong><?php _e('Format:', 'csig'); ?></strong><br>
-                            <?php echo esc_html(ucfirst($output_format)); ?>
-                        </div>
-                        <div>
-                            <strong><?php _e('Quality:', 'csig'); ?></strong><br>
-                            <?php echo esc_html(ucfirst($image_quality)); ?> (<?php echo $pixel_ratio; ?>x)
-                        </div>
-                    </div>
-                    
-                    <!-- Performance warning -->
-                    <?php if ($pixel_ratio >= 3): ?>
-                    <div class="notice notice-warning inline" style="margin-bottom: 15px;">
-                        <p><strong><?php _e('Performance Note:', 'csig'); ?></strong> <?php _e('This job uses Ultra quality (3x) which may take significantly longer to process.', 'csig'); ?></p>
-                    </div>
-                    <?php endif; ?>
-                    
-                    <!-- Run Job Button -->
-                    <button type="button" class="button button-primary button-large" id="csig-run-job">
-                        <?php _e('Generate Images Now', 'csig'); ?>
-                    </button>
-                    
-                    <div id="csig-status" style="margin-top: 15px; display: none;">
-                        <div class="notice notice-info inline">
-                            <p id="csig-status-text"><?php _e('Processing...', 'csig'); ?></p>
-                            <div style="width: 100%; background-color: #f0f0f0; border-radius: 3px; margin-top: 10px;">
-                                <div id="csig-progress-bar" style="width: 0%; height: 20px; background-color: #0073aa; border-radius: 3px; transition: width 0.3s;"></div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div id="csig-results" style="margin-top: 15px; display: none;">
-                        <h4><?php _e('Generated Files:', 'csig'); ?></h4>
-                        <div id="csig-file-list"></div>
-                    </div>
-                </div>
-                
-                <!-- Preview Section with Dynamic Resizing -->
-                <div style="background: white; border: 1px solid #ddd; border-radius: 4px; padding: 15px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                        <h3 style="margin: 0;"><?php _e('Live Preview', 'csig'); ?></h3>
-                        <div id="csig-viewport-controls" style="display: flex; align-items: center; gap: 10px;">
-                            <label for="csig-preview-mode" style="font-weight: 600;"><?php _e('Viewport:', 'csig'); ?></label>
-                            <select id="csig-preview-mode" style="min-width: 140px;">
-                                <option value="fixed" <?php selected($job_settings['iframeMode'], 'fixed'); ?>><?php _e('Fixed (1200×800)', 'csig'); ?></option>
-                                <option value="desktop" <?php selected($job_settings['iframePreset'], 'desktop'); ?>><?php _e('Desktop (1200×800)', 'csig'); ?></option>
-                                <option value="tablet" <?php selected($job_settings['iframePreset'], 'tablet'); ?>><?php _e('Tablet (768×1024)', 'csig'); ?></option>
-                                <option value="mobile" <?php selected($job_settings['iframePreset'], 'mobile'); ?>><?php _e('Mobile (375×667)', 'csig'); ?></option>
-                                <option value="custom" <?php selected($job_settings['iframePreset'], 'custom'); ?>><?php _e('Custom', 'csig'); ?></option>
-                            </select>
-                            <div id="csig-custom-dimensions" style="<?php echo $job_settings['iframePreset'] === 'custom' ? '' : 'display: none;'; ?>">
-                                <input type="number" id="csig-custom-width" value="<?php echo $job_settings['iframeWidth']; ?>" style="width: 70px;" placeholder="W" />
-                                ×
-                                <input type="number" id="csig-custom-height" value="<?php echo $job_settings['iframeHeight']; ?>" style="width: 70px;" placeholder="H" />
-                            </div>
-                            <div id="csig-viewport-size" style="font-size: 12px; color: #666;">
-                                <?php echo $job_settings['iframeWidth']; ?>×<?php echo $job_settings['iframeHeight']; ?>px
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div id="csig-preview" style="overflow-x: auto; max-width: 100%; border: 1px solid #ddd; border-radius: 4px; min-height: 400px; display: flex; align-items: center; justify-content: center; background: #f8f9fa;">
-                        <div id="csig-loading" style="text-align: center; color: #666;">
-                            <div class="spinner is-active" style="float: none; margin-bottom: 10px;"></div>
-                            <p><?php _e('Loading preview...', 'csig'); ?></p>
-                        </div>
-                    </div>
-                </div>
+        
+        <!-- Job Summary (moved from main content) -->
+        <div id="csig-job-summary" style="margin-bottom: 15px; padding: 10px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
+            <div style="margin-bottom: 8px;">
+                <strong><?php _e('URL:', 'csig'); ?></strong><br>
+                <a href="<?php echo esc_url($url); ?>" target="_blank" style="word-break: break-all; font-size: 11px;"><?php echo esc_html($url); ?></a>
+            </div>
+            <div style="margin-bottom: 8px;">
+                <strong><?php _e('Selector:', 'csig'); ?></strong><br>
+                <code style="font-size: 11px;"><?php echo esc_html($selector); ?></code>
+            </div>
+            <div style="margin-bottom: 8px;">
+                <strong><?php _e('Format:', 'csig'); ?></strong> <?php echo esc_html(ucfirst($output_format)); ?>
+            </div>
+            <div style="margin-bottom: 8px;">
+                <strong><?php _e('Quality:', 'csig'); ?></strong> <?php echo esc_html(ucfirst($image_quality)); ?> (<?php echo $pixel_ratio; ?>x)
+            </div>
+            
+            <?php if ($pixel_ratio >= 3): ?>
+            <div style="color: #d63638; font-size: 11px; margin-top: 5px;">
+                <strong><?php _e('Performance Note:', 'csig'); ?></strong> <?php _e('Ultra quality may take longer to process.', 'csig'); ?>
+            </div>
             <?php endif; ?>
         </div>
         
-        <style>
-        #csig-job-interface {
-            max-width: calc(100% - 320px); /* Account for sidebar */
-        }
-        @media (max-width: 1200px) {
-            #csig-job-interface {
-                max-width: 100%;
-            }
-        }
-        #csig-preview iframe {
-            border-radius: 4px;
-            transition: all 0.3s ease;
-        }
-        </style>
+        <!-- Viewport Controls -->
+        <div style="margin-bottom: 15px;">
+            <label for="csig-preview-mode" style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 5px;"><?php _e('Viewport Size:', 'csig'); ?></label>
+            <select id="csig-preview-mode" style="width: 100%; font-size: 12px;">
+                <?php
+                // Determine which option should be selected based on saved settings
+                $current_mode = $job_settings['iframeMode'];
+                $current_preset = $job_settings['iframePreset'];
+                
+                if ($current_mode === 'fixed') {
+                    $selected_option = 'fixed';
+                } else {
+                    $selected_option = $current_preset;
+                }
+                ?>
+                <option value="fixed" <?php selected($selected_option, 'fixed'); ?>><?php _e('Fixed (1200×800)', 'csig'); ?></option>
+                <option value="desktop" <?php selected($selected_option, 'desktop'); ?>><?php _e('Desktop (1200×800)', 'csig'); ?></option>
+                <option value="tablet" <?php selected($selected_option, 'tablet'); ?>><?php _e('Tablet (768×1024)', 'csig'); ?></option>
+                <option value="mobile" <?php selected($selected_option, 'mobile'); ?>><?php _e('Mobile (375×667)', 'csig'); ?></option>
+                <option value="custom" <?php selected($selected_option, 'custom'); ?>><?php _e('Custom', 'csig'); ?></option>
+            </select>
+            
+            <div id="csig-custom-dimensions" style="margin-top: 8px; <?php echo $job_settings['iframePreset'] === 'custom' ? '' : 'display: none;'; ?>">
+                <input type="number" id="csig-custom-width" value="<?php echo $job_settings['iframeWidth']; ?>" style="width: 45%; font-size: 12px;" placeholder="Width" />
+                <span style="margin: 0 3px;">×</span>
+                <input type="number" id="csig-custom-height" value="<?php echo $job_settings['iframeHeight']; ?>" style="width: 45%; font-size: 12px;" placeholder="Height" />
+            </div>
+            
+            <div id="csig-viewport-size" style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
+                <?php echo $job_settings['iframeWidth']; ?>×<?php echo $job_settings['iframeHeight']; ?>px
+            </div>
+        </div>
+        
+        <!-- Run Job Button -->
+        <button type="button" class="button button-primary" id="csig-run-job" style="width: 100%; margin-bottom: 15px;">
+            <?php _e('Generate Images Now', 'csig'); ?>
+        </button>
+        
+        <!-- Status Section -->
+        <div id="csig-status" style="display: none; margin-bottom: 15px;">
+            <div style="padding: 8px; background: #e1f5fe; border: 1px solid #81d4fa; border-radius: 3px; font-size: 12px;">
+                <p id="csig-status-text" style="margin: 0 0 8px 0;"><?php _e('Processing...', 'csig'); ?></p>
+                <div style="width: 100%; background-color: #f0f0f0; border-radius: 2px;">
+                    <div id="csig-progress-bar" style="width: 0%; height: 12px; background-color: #0073aa; border-radius: 2px; transition: width 0.3s;"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Results Section -->
+        <div id="csig-results" style="display: none;">
+            <h4 style="margin: 0 0 8px 0; font-size: 13px;"><?php _e('Generated Files:', 'csig'); ?></h4>
+            <div id="csig-file-list"></div>
+        </div>
         
         <script>
-        // Load iframe immediately and handle viewport changes
+        // Load iframe and handle viewport changes
         document.addEventListener('DOMContentLoaded', function() {
-            const previewDiv = document.getElementById('csig-preview');
-            const loadingDiv = document.getElementById('csig-loading');
             const previewModeSelect = document.getElementById('csig-preview-mode');
             const customDimensions = document.getElementById('csig-custom-dimensions');
             const customWidth = document.getElementById('csig-custom-width');
@@ -298,28 +330,39 @@ class Job_Post_Type {
             
             function updateViewportSize(mode) {
                 const dims = getDimensions(mode);
-                viewportSize.textContent = dims.width + '×' + dims.height + 'px';
+                if (viewportSize) {
+                    viewportSize.textContent = dims.width + '×' + dims.height + 'px';
+                }
             }
             
             function createIframe(dimensions) {
+                // Remove existing iframe
                 if (currentIframe) {
                     currentIframe.remove();
                 }
                 
-                loadingDiv.style.display = 'block';
+                // Find the iframe container in the main content area
+                const iframeContainer = document.getElementById('csig-iframe-container');
+                if (!iframeContainer) {
+                    console.error('CSIG: Iframe container not found');
+                    return;
+                }
                 
+                // Create new iframe
                 const iframe = document.createElement('iframe');
+                iframe.id = 'csig-preview-iframe';
                 iframe.src = '<?php echo esc_js($url); ?>';
                 iframe.style.width = dimensions.width + 'px';
                 iframe.style.height = dimensions.height + 'px';
-                iframe.style.border = 'none';
+                iframe.style.border = '1px solid #ddd';
                 iframe.style.borderRadius = '4px';
-                iframe.style.display = 'none';
+                iframe.style.display = 'block';
+                iframe.style.maxWidth = '100%';
+                
+                // Add iframe to container
+                iframeContainer.appendChild(iframe);
                 
                 iframe.onload = function() {
-                    loadingDiv.style.display = 'none';
-                    iframe.style.display = 'block';
-                    
                     // Inject CSS to hide admin bar
                     try {
                         const styleElement = document.createElement('style');
@@ -330,19 +373,16 @@ class Job_Post_Type {
                     }
                 };
                 
-                iframe.onerror = function() {
-                    loadingDiv.innerHTML = '<p style="color: #d63638;">Failed to load preview</p>';
-                };
-                
-                previewDiv.appendChild(iframe);
                 currentIframe = iframe;
-                
                 return iframe;
             }
             
             function handlePreviewModeChange() {
-                const mode = previewModeSelect.value;
-                customDimensions.style.display = mode === 'custom' ? 'flex' : 'none';
+                const mode = previewModeSelect ? previewModeSelect.value : 'desktop';
+                
+                if (customDimensions) {
+                    customDimensions.style.display = mode === 'custom' ? 'block' : 'none';
+                }
                 
                 const dimensions = getDimensions(mode);
                 updateViewportSize(mode);
@@ -352,12 +392,14 @@ class Job_Post_Type {
             }
             
             // Initial load
-            handlePreviewModeChange();
-            
-            // Handle changes
-            previewModeSelect.addEventListener('change', handlePreviewModeChange);
-            customWidth.addEventListener('input', handlePreviewModeChange);
-            customHeight.addEventListener('input', handlePreviewModeChange);
+            if (previewModeSelect) {
+                handlePreviewModeChange();
+                
+                // Handle changes
+                previewModeSelect.addEventListener('change', handlePreviewModeChange);
+                if (customWidth) customWidth.addEventListener('input', handlePreviewModeChange);
+                if (customHeight) customHeight.addEventListener('input', handlePreviewModeChange);
+            }
             
             // Make iframe available to the capture script
             window.csigCurrentIframe = function() {
@@ -367,7 +409,39 @@ class Job_Post_Type {
         </script>
         <?php
     }
-    
+
+
+    /**
+     * Save job capture meta box data
+     *
+     * @param int $post_id The post ID
+     */
+    public function save_job_capture_meta($post_id) {
+        // Check if nonce is valid
+        if (!isset($_POST['job_capture_meta_box_nonce']) || !wp_verify_nonce($_POST['job_capture_meta_box_nonce'], 'job_capture_meta_box')) {
+            return;
+        }
+        
+        // Check if user has permission to edit the post
+        if (!current_user_can('edit_post', $post_id)) {
+            return;
+        }
+        
+        // Don't save on autosave
+        if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
+            return;
+        }
+        
+        // Save the fields
+        $capture_enabled = isset($_POST['job_capture_enabled']) ? '1' : '0';
+        update_post_meta($post_id, '_job_capture_enabled', $capture_enabled);
+        
+        if (isset($_POST['job_capture_webhook'])) {
+            update_post_meta($post_id, '_job_capture_webhook', sanitize_url($_POST['job_capture_webhook']));
+        }
+    }
+
+
     public function job_settings_meta_box($post) {
         wp_nonce_field('csig_save_job_meta', 'csig_job_meta_nonce');
         
@@ -606,7 +680,10 @@ class Job_Post_Type {
                 $value = $sanitize_function($_POST[$field_name]);
                 update_post_meta($post_id, $meta_key, $value);
             } else {
-                delete_post_meta($post_id, $meta_key);
+                // Special handling for checkbox and radio buttons
+                if ($meta_key === '_csig_retina_support') {
+                    delete_post_meta($post_id, $meta_key);
+                }
             }
         }
     }
