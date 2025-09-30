@@ -12,15 +12,13 @@ class Job_Post_Type {
     
     public function __construct() {
         add_action('init', array($this, 'register_post_type'));
-        add_action('add_meta_boxes', array($this, 'add_meta_boxes'));
+        add_action('edit_form_after_title', array($this, 'add_meta_boxes'));
         add_action('save_post', array($this, 'save_job_meta'));
         add_filter('manage_' . self::POST_TYPE . '_posts_columns', array($this, 'set_custom_columns'));
         add_action('manage_' . self::POST_TYPE . '_posts_custom_column', array($this, 'custom_column_content'), 10, 2);
         add_filter('post_row_actions', array($this, 'add_run_job_action'), 10, 2);
         add_action('admin_enqueue_scripts', array($this, 'enqueue_job_scripts'));
         add_action('edit_form_after_title', array($this, 'add_job_interface'));
-
-        add_action('save_post_job', array($this, 'save_job_capture_meta')); // Add this line
 
     }
     
@@ -78,7 +76,7 @@ class Job_Post_Type {
             array($this, 'job_capture_meta_box'),
             self::POST_TYPE,
             'side',
-            'high'
+            'low'
         );
         
         add_meta_box(
@@ -93,28 +91,9 @@ class Job_Post_Type {
         // Remove the default editor since we don't need it for jobs
         remove_post_type_support(self::POST_TYPE, 'editor');
         
-        // Move settings to top priority
-        add_action('edit_form_after_title', array($this, 'add_settings_before_editor'), 5);
     }
     
-    public function add_settings_before_editor($post) {
-        if ($post->post_type !== self::POST_TYPE) {
-            return;
-        }
-        
-        // Render the settings metabox content directly here
-        echo '<div style="margin: 20px 0;">';
-        echo '<div class="postbox" style="margin-bottom: 0;">';
-        echo '<div class="postbox-header"><h2 class="hndle ui-sortable-handle">' . __('Job Settings', 'csig') . '</h2></div>';
-        echo '<div class="inside">';
-        $this->job_settings_meta_box($post);
-        echo '</div>';
-        echo '</div>';
-        echo '</div>';
-        
-        // Hide the duplicate settings metabox that will appear below
-        echo '<style>#csig_job_settings { display: none !important; }</style>';
-    }
+
     
     public function enqueue_job_scripts($hook) {
         global $post_type, $post;
@@ -200,6 +179,9 @@ class Job_Post_Type {
      * @param WP_Post $post The post object
      */
     public function job_capture_meta_box($post) {
+        // Add nonce for security
+        wp_nonce_field('job_capture_meta_box', 'job_capture_meta_box_nonce');
+        
         if ($post->post_status !== 'publish') {
             ?>
             <p style="color: #d63638; margin: 0;"><?php _e('Publish this job to enable capture functionality.', 'csig'); ?></p>
@@ -410,35 +392,90 @@ class Job_Post_Type {
         <?php
     }
 
-
     /**
-     * Save job capture meta box data
+     * Save job meta box data
      *
      * @param int $post_id The post ID
      */
-    public function save_job_capture_meta($post_id) {
-        // Check if nonce is valid
-        if (!isset($_POST['job_capture_meta_box_nonce']) || !wp_verify_nonce($_POST['job_capture_meta_box_nonce'], 'job_capture_meta_box')) {
+    public function save_job_meta($post_id) {
+        // Add debugging
+        error_log('CSIG: save_job_meta called for post ID: ' . $post_id);
+        error_log('CSIG: POST data: ' . print_r($_POST, true));
+        error_log('CSIG: Request URI: ' . $_SERVER['REQUEST_URI']);
+        
+        // Check both nonces (from settings and capture metaboxes)
+        $settings_nonce_valid = isset($_POST['csig_job_meta_nonce']) && wp_verify_nonce($_POST['csig_job_meta_nonce'], 'csig_save_job_meta');
+        $capture_nonce_valid = isset($_POST['job_capture_meta_box_nonce']) && wp_verify_nonce($_POST['job_capture_meta_box_nonce'], 'job_capture_meta_box');
+        
+        error_log('CSIG: Settings nonce valid: ' . ($settings_nonce_valid ? 'yes' : 'no'));
+        error_log('CSIG: Capture nonce valid: ' . ($capture_nonce_valid ? 'yes' : 'no'));
+        
+        // If neither nonce is valid, return
+        if (!$settings_nonce_valid && !$capture_nonce_valid) {
+            error_log('CSIG: No valid nonce, returning early');
             return;
         }
         
-        // Check if user has permission to edit the post
-        if (!current_user_can('edit_post', $post_id)) {
-            return;
-        }
-        
-        // Don't save on autosave
         if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
+            error_log('CSIG: Autosave detected, returning early');
             return;
         }
         
-        // Save the fields
-        $capture_enabled = isset($_POST['job_capture_enabled']) ? '1' : '0';
-        update_post_meta($post_id, '_job_capture_enabled', $capture_enabled);
-        
-        if (isset($_POST['job_capture_webhook'])) {
-            update_post_meta($post_id, '_job_capture_webhook', sanitize_url($_POST['job_capture_webhook']));
+        if (!current_user_can('edit_post', $post_id)) {
+            error_log('CSIG: User cannot edit post, returning early');
+            return;
         }
+        
+        if (get_post_type($post_id) !== self::POST_TYPE) {
+            error_log('CSIG: Wrong post type (' . get_post_type($post_id) . '), returning early');
+            return;
+        }
+        
+        error_log('CSIG: All checks passed, saving meta fields...');
+        
+        // Save meta fields - all fields from both metaboxes
+        $meta_fields = array(
+            '_csig_url' => 'esc_url_raw',
+            '_csig_selector' => 'sanitize_text_field',
+            '_csig_output_format' => 'sanitize_text_field',
+            '_csig_image_quality' => 'sanitize_text_field',
+            '_csig_save_folder' => 'sanitize_text_field',
+            '_csig_retina_support' => 'sanitize_text_field',
+            '_csig_overwrite_files' => 'sanitize_text_field',
+            '_csig_iframe_mode' => 'sanitize_text_field',
+            '_csig_iframe_preset' => 'sanitize_text_field',
+            '_csig_iframe_width' => 'intval',
+            '_csig_iframe_height' => 'intval',
+            '_job_capture_enabled' => 'sanitize_text_field',
+            '_job_capture_webhook' => 'sanitize_url'
+        );
+        
+        foreach ($meta_fields as $meta_key => $sanitize_function) {
+            // Determine the corresponding form field name
+            if (strpos($meta_key, '_csig_') === 0) {
+                $field_name = str_replace('_csig_', 'csig_', $meta_key);
+            } else {
+                // For capture-specific fields, assume the field name matches the meta key without the underscore
+                $field_name = ltrim($meta_key, '_');
+            }
+            
+            error_log("CSIG: Checking field '{$field_name}' for meta key '{$meta_key}'");
+            
+            if (isset($_POST[$field_name])) {
+                $value = $sanitize_function($_POST[$field_name]);
+                error_log("CSIG: Saving {$meta_key} = {$value}");
+                update_post_meta($post_id, $meta_key, $value);
+            } else {
+                error_log("CSIG: Field '{$field_name}' not found in POST data");
+                // Special handling for checkbox fields
+                if (in_array($meta_key, ['_csig_retina_support', '_csig_overwrite_files', '_job_capture_enabled'])) {
+                    error_log("CSIG: Deleting checkbox meta {$meta_key}");
+                    delete_post_meta($post_id, $meta_key);
+                }
+            }
+        }
+        
+        error_log('CSIG: save_job_meta completed');
     }
 
 
@@ -498,6 +535,16 @@ class Job_Post_Type {
                 <td>
                     <input type="text" id="csig_save_folder" name="csig_save_folder" value="<?php echo esc_attr($save_folder); ?>" class="regular-text" />
                     <p class="description"><?php _e('Folder within uploads directory', 'csig'); ?></p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="csig_overwrite_files"><?php _e('File Handling', 'csig'); ?></label></th>
+                <td>
+                    <label>
+                        <input type="checkbox" id="csig_overwrite_files" name="csig_overwrite_files" value="1" <?php checked(get_post_meta($post->ID, '_csig_overwrite_files', true), '1'); ?> />
+                        <?php _e('Overwrite existing files with the same name', 'csig'); ?>
+                    </label>
+                    <p class="description"><?php _e('If unchecked, files with duplicate names will have a number appended (e.g., filename_2.png)', 'csig'); ?></p>
                 </td>
             </tr>
             <tr>
@@ -646,51 +693,6 @@ class Job_Post_Type {
         }
     }
     
-    public function save_job_meta($post_id) {
-        if (!isset($_POST['csig_job_meta_nonce']) || !wp_verify_nonce($_POST['csig_job_meta_nonce'], 'csig_save_job_meta')) {
-            return;
-        }
-        
-        if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
-            return;
-        }
-        
-        if (!current_user_can('edit_post', $post_id)) {
-            return;
-        }
-        
-        if (get_post_type($post_id) !== self::POST_TYPE) {
-            return;
-        }
-        
-        // Save meta fields
-        $meta_fields = array(
-            '_csig_url' => 'esc_url_raw',
-            '_csig_selector' => 'sanitize_text_field',
-            '_csig_output_format' => 'sanitize_text_field',
-            '_csig_image_quality' => 'sanitize_text_field',
-            '_csig_save_folder' => 'sanitize_text_field',
-            '_csig_retina_support' => 'sanitize_text_field',
-            '_csig_iframe_mode' => 'sanitize_text_field',
-            '_csig_iframe_preset' => 'sanitize_text_field',
-            '_csig_iframe_width' => 'intval',
-            '_csig_iframe_height' => 'intval',
-        );
-        
-        foreach ($meta_fields as $meta_key => $sanitize_function) {
-            $field_name = str_replace('_csig_', 'csig_', $meta_key);
-            if (isset($_POST[$field_name])) {
-                $value = $sanitize_function($_POST[$field_name]);
-                update_post_meta($post_id, $meta_key, $value);
-            } else {
-                // Special handling for checkbox and radio buttons
-                if ($meta_key === '_csig_retina_support') {
-                    delete_post_meta($post_id, $meta_key);
-                }
-            }
-        }
-    }
-    
     public function set_custom_columns($columns) {
         $new_columns = array(
             'cb' => $columns['cb'],
@@ -757,6 +759,7 @@ class Job_Post_Type {
         $image_quality = get_post_meta($job_id, '_csig_image_quality', true) ?: 'high';
         $save_folder = get_post_meta($job_id, '_csig_save_folder', true) ?: 'csig-images';
         $retina_support = get_post_meta($job_id, '_csig_retina_support', true) === '1';
+        $overwrite_files = get_post_meta($job_id, '_csig_overwrite_files', true) === '1';
         $iframe_mode = get_post_meta($job_id, '_csig_iframe_mode', true) ?: 'fixed';
         $iframe_preset = get_post_meta($job_id, '_csig_iframe_preset', true) ?: 'desktop';
         $iframe_width = get_post_meta($job_id, '_csig_iframe_width', true) ?: 1200;
@@ -795,6 +798,7 @@ class Job_Post_Type {
             'imageQuality' => $image_quality,
             'pixelRatio' => $quality_map[$image_quality] ?? 2,
             'retinaSupport' => $retina_support,
+            'overwriteFiles' => $overwrite_files,
             'iframeWidth' => $final_width,
             'iframeHeight' => $final_height,
             'iframeMode' => $iframe_mode,

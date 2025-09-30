@@ -263,6 +263,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         formData.append('image_data', pngData);
                         formData.append('element_index', i);
                         formData.append('job_id', csigJobData.jobId);
+                        formData.append('overwrite_files', settings.overwriteFiles ? '1' : '0');
                         
                         // Send custom filename if available
                         if (sanitizedFilename) {
@@ -319,6 +320,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         formData.append('pdf_data', base64data);
                         formData.append('element_index', i);
                         formData.append('job_id', csigJobData.jobId);
+                        formData.append('overwrite_files', settings.overwriteFiles ? '1' : '0');
                         
                         // Send custom filename if available
                         if (sanitizedFilename) {

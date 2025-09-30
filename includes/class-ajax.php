@@ -19,6 +19,7 @@ class Ajax {
 
 
 
+        
     public function save_image() {
         check_ajax_referer('csig_save_image', 'nonce');
         
@@ -30,6 +31,7 @@ class Ajax {
         $element_index = intval($_POST['element_index'] ?? 0);
         $job_id = intval($_POST['job_id'] ?? 0);
         $custom_filename = sanitize_file_name($_POST['custom_filename'] ?? '');
+        $overwrite_files = ($_POST['overwrite_files'] ?? '0') === '1';
         
         if (empty($image_data)) {
             wp_send_json_error(__('No image data received', 'csig'));
@@ -73,15 +75,17 @@ class Ajax {
         $target_path = $target_dir . '/' . $filename;
         $target_url = $upload_dir['baseurl'] . '/' . $save_folder . '/' . $filename;
         
-        // Handle filename conflicts
-        $counter = 1;
-        $original_filename = $filename;
-        while (file_exists($target_path)) {
-            $path_info = pathinfo($original_filename);
-            $filename = $path_info['filename'] . '_' . $counter . '.' . $path_info['extension'];
-            $target_path = $target_dir . '/' . $filename;
-            $target_url = $upload_dir['baseurl'] . '/' . $save_folder . '/' . $filename;
-            $counter++;
+        // Handle filename conflicts based on overwrite setting
+        if (!$overwrite_files) {
+            $counter = 1;
+            $original_filename = $filename;
+            while (file_exists($target_path)) {
+                $path_info = pathinfo($original_filename);
+                $filename = $path_info['filename'] . '_' . $counter . '.' . $path_info['extension'];
+                $target_path = $target_dir . '/' . $filename;
+                $target_url = $upload_dir['baseurl'] . '/' . $save_folder . '/' . $filename;
+                $counter++;
+            }
         }
         
         // Save the file
@@ -89,40 +93,17 @@ class Ajax {
             wp_send_json_error(__('Failed to save image file', 'csig'));
         }
         
+        $message = $overwrite_files && file_exists($target_path) 
+            ? __('Image saved successfully (overwritten)', 'csig')
+            : __('Image saved successfully', 'csig');
+        
         wp_send_json_success(array(
-            'message' => __('Image saved successfully', 'csig'),
+            'message' => $message,
             'filename' => $filename,
-            'url' => $target_url
+            'url' => $target_url,
+            'overwritten' => $overwrite_files && file_exists($target_path)
         ));
     }
-
-    
-    public function save_image_d() {
-        check_ajax_referer( 'csig_save_image', 'nonce' );
-
-        $image_data = $_POST['image_data'] ?? '';
-        $element_index = intval( $_POST['element_index'] ?? 0 );
-        $job_id = intval( $_POST['job_id'] ?? 0 );
-        
-        if ( ! $image_data ) {
-            wp_send_json_error( __( 'Missing image data', 'csig' ) );
-        }
-
-        $folder_name = $this->get_job_folder( $job_id );
-        $save_dir = $this->settings->get_save_directory( $folder_name );
-        $filename = 'csig-' . time() . '-' . ( $element_index + 1 ) . '.png';
-        $file_path = $save_dir['path'] . '/' . $filename;
-
-        $image_parts = explode( ',', $image_data );
-        $image_base64 = base64_decode( end( $image_parts ) );
-        
-        if ( file_put_contents( $file_path, $image_base64 ) ) {
-            wp_send_json_success( [ 'url' => $save_dir['url'] . '/' . $filename ] );
-        } else {
-            wp_send_json_error( __( 'Failed to save image file', 'csig' ) );
-        }
-    }
-    
 
     public function save_pdf() {
         check_ajax_referer('csig_save_image', 'nonce');
@@ -135,6 +116,7 @@ class Ajax {
         $element_index = intval($_POST['element_index'] ?? 0);
         $job_id = intval($_POST['job_id'] ?? 0);
         $custom_filename = sanitize_file_name($_POST['custom_filename'] ?? '');
+        $overwrite_files = ($_POST['overwrite_files'] ?? '0') === '1';
         
         if (empty($pdf_data)) {
             wp_send_json_error(__('No PDF data received', 'csig'));
@@ -178,15 +160,17 @@ class Ajax {
         $target_path = $target_dir . '/' . $filename;
         $target_url = $upload_dir['baseurl'] . '/' . $save_folder . '/' . $filename;
         
-        // Handle filename conflicts
-        $counter = 1;
-        $original_filename = $filename;
-        while (file_exists($target_path)) {
-            $path_info = pathinfo($original_filename);
-            $filename = $path_info['filename'] . '_' . $counter . '.' . $path_info['extension'];
-            $target_path = $target_dir . '/' . $filename;
-            $target_url = $upload_dir['baseurl'] . '/' . $save_folder . '/' . $filename;
-            $counter++;
+        // Handle filename conflicts based on overwrite setting
+        if (!$overwrite_files) {
+            $counter = 1;
+            $original_filename = $filename;
+            while (file_exists($target_path)) {
+                $path_info = pathinfo($original_filename);
+                $filename = $path_info['filename'] . '_' . $counter . '.' . $path_info['extension'];
+                $target_path = $target_dir . '/' . $filename;
+                $target_url = $upload_dir['baseurl'] . '/' . $save_folder . '/' . $filename;
+                $counter++;
+            }
         }
         
         // Save the file
@@ -194,37 +178,16 @@ class Ajax {
             wp_send_json_error(__('Failed to save PDF file', 'csig'));
         }
         
+        $message = $overwrite_files && file_exists($target_path) 
+            ? __('PDF saved successfully (overwritten)', 'csig')
+            : __('PDF saved successfully', 'csig');
+        
         wp_send_json_success(array(
-            'message' => __('PDF saved successfully', 'csig'),
+            'message' => $message,
             'filename' => $filename,
-            'url' => $target_url
+            'url' => $target_url,
+            'overwritten' => $overwrite_files && file_exists($target_path)
         ));
-    }
-
-    public function save_pdf_d() {
-        check_ajax_referer( 'csig_save_image', 'nonce' );
-
-        $pdf_data = $_POST['pdf_data'] ?? '';
-        $element_index = intval( $_POST['element_index'] ?? 0 );
-        $job_id = intval( $_POST['job_id'] ?? 0 );
-        
-        if ( ! $pdf_data ) {
-            wp_send_json_error( __( 'Missing PDF data', 'csig' ) );
-        }
-
-        $folder_name = $this->get_job_folder( $job_id );
-        $save_dir = $this->settings->get_save_directory( $folder_name );
-        $filename = 'csig-' . time() . '-' . ( $element_index + 1 ) . '.pdf';
-        $file_path = $save_dir['path'] . '/' . $filename;
-
-        $pdf_parts = explode( ',', $pdf_data );
-        $pdf_base64 = base64_decode( end( $pdf_parts ) );
-        
-        if ( file_put_contents( $file_path, $pdf_base64 ) ) {
-            wp_send_json_success( [ 'url' => $save_dir['url'] . '/' . $filename ] );
-        } else {
-            wp_send_json_error( __( 'Failed to save PDF file', 'csig' ) );
-        }
     }
     
     public function update_job_stats() {
