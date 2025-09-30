@@ -1,0 +1,10 @@
+{
+    "name": "nicscott01/html-to-image",
+    "description": "Render an html element to an image on the client side using html-to-image",
+    "type": "wordpress-plugin", 
+    "require": {
+        "php": "^8.0"
+    },
+    "prefer-stable": true,
+    "minimum-stability": "dev"
+}
