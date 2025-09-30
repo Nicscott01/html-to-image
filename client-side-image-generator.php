@@ -27,5 +27,5 @@ add_action('plugins_loaded', function() {
 
 // Activation hook
 register_activation_hook(__FILE__, function() {
-    \CSIG\Database::create_tables();
+   // \CSIG\Database::create_tables();
 });
