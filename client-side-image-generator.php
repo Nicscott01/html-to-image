@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Client Side Image Generator
  * Description: Generate images from HTML elements using the .csig-card selector by default
- * Version: 1.0.2
+ * Version: 1.0.4
  */
 
 if (!defined('ABSPATH')) {
@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
 // Define plugin constants
 define('CSIG_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CSIG_PLUGIN_URL', plugin_dir_url(__FILE__));
-define('CSIG_VERSION', '1.0.2');
+define('CSIG_VERSION', '1.0.4');
 
 // Load the main plugin class
 require_once CSIG_PLUGIN_DIR . 'includes/class-plugin.php';
