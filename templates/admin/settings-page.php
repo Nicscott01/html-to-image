@@ -1,7 +1,7 @@
 <div class="wrap">
     <h1><?php _e( 'Global Settings', 'csig' ); ?></h1>
-    <p><?php _e( 'These are the default settings used when creating new jobs.', 'csig' ); ?></p>
-    
+<?php
+/* 
     <form method="post" action="options.php">
         <?php
         settings_fields( 'csig_global_settings' );
@@ -9,7 +9,8 @@
         submit_button();
         ?>
     </form>
-    
+  */
+?>  
     <div class="card" style="margin-top: 20px;">
         <h2><?php _e( 'Developer Options', 'csig' ); ?></h2>
         <p><?php _e( 'You can override these settings programmatically:', 'csig' ); ?></p>

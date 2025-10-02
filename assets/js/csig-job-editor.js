@@ -5,7 +5,56 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('CSIG: Run button not found');
         return;
     }
-    
+
+    function appendGeneratedFileToList(url, format) {
+        const container = document.getElementById('csig-generated-files-container');
+        if (!container) {
+            return;
+        }
+
+        const deleteAllButton = container.querySelector('.csig-delete-all-files');
+        if (deleteAllButton) {
+            deleteAllButton.disabled = false;
+            if (deleteAllButton.dataset && deleteAllButton.dataset.label) {
+                deleteAllButton.textContent = deleteAllButton.dataset.label;
+            }
+        }
+
+        let list = container.querySelector('ul.csig-generated-files');
+        if (!list) {
+            // Remove empty notice if present
+            const emptyNotice = container.querySelector('em');
+            if (emptyNotice) {
+                emptyNotice.remove();
+            }
+
+            list = document.createElement('ul');
+            list.className = 'csig-generated-files';
+            list.style.margin = '5px 0 0 0';
+            list.style.paddingLeft = '15px';
+            list.style.fontSize = '12px';
+            container.appendChild(list);
+        }
+
+        const li = document.createElement('li');
+        li.dataset.fileUrl = url;
+        li.style.marginBottom = '6px';
+
+        const filename = url.split('/').pop();
+        const now = new Date();
+        const meta = `${format.toUpperCase()} · ${now.toLocaleString()}`;
+
+        li.innerHTML = `
+            <div>
+                <a href="${url}" target="_blank">${filename}</a>
+                <span style="color: #666;">&mdash; ${meta}</span>
+            </div>
+            <button type="button" class="button-link-delete csig-delete-file" style="color: #b32d2e;">&times; ${csigJobData.i18nDelete || 'Delete'}</button>
+        `;
+
+        list.insertBefore(li, list.firstChild);
+    }
+
     // Helper function to sanitize filename from various sources
     function sanitizeFilename(filename) {
         if (!filename) {
@@ -280,6 +329,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         
                         if (pngResult.success) {
                             generatedFiles.push(pngResult.data.url);
+                            appendGeneratedFileToList(pngResult.data.url, 'png');
                         } else {
                             console.error('CSIG: PNG save failed:', pngResult);
                         }
@@ -337,6 +387,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         
                         if (pdfResult.success) {
                             generatedFiles.push(pdfResult.data.url);
+                            appendGeneratedFileToList(pdfResult.data.url, 'pdf');
                         } else {
                             console.error('CSIG: PDF save failed:', pdfResult);
                         }

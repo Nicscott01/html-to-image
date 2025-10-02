@@ -12,13 +12,13 @@ class Job_Post_Type {
     
     public function __construct() {
         add_action('init', array($this, 'register_post_type'));
-        add_action('edit_form_after_title', array($this, 'add_meta_boxes'));
+        add_action('add_meta_boxes', array($this, 'add_meta_boxes'));
         add_action('save_post', array($this, 'save_job_meta'));
         add_filter('manage_' . self::POST_TYPE . '_posts_columns', array($this, 'set_custom_columns'));
         add_action('manage_' . self::POST_TYPE . '_posts_custom_column', array($this, 'custom_column_content'), 10, 2);
         add_filter('post_row_actions', array($this, 'add_run_job_action'), 10, 2);
         add_action('admin_enqueue_scripts', array($this, 'enqueue_job_scripts'));
-        add_action('edit_form_after_title', array($this, 'add_job_interface'));
+        add_action('dbx_post_sidebar', array($this, 'add_job_interface'));
 
     }
     
@@ -69,6 +69,7 @@ class Job_Post_Type {
             'normal',
             'high'
         );
+
         
         add_meta_box(
             'csig_job_capture',
@@ -117,7 +118,8 @@ class Job_Post_Type {
                 'nonce'   => wp_create_nonce('csig_save_image'),
                 'settings' => $job_settings,
                 'jobId' => $post->ID,
-                'jobUrl' => get_post_meta($post->ID, '_csig_url', true)
+                'jobUrl' => get_post_meta($post->ID, '_csig_url', true),
+                'i18nDelete' => __('Delete', 'csig')
             ));
         }
     }
@@ -149,13 +151,19 @@ class Job_Post_Type {
         
         // Just add a target div for the iframe - the sidebar controls will populate it
         ?>
-        <div id="csig-iframe-container" style="margin: 20px 0;">
-            <!-- Iframe will be inserted here by the sidebar controls -->
+        <div id="csig-iframe-wrapper" style="overflow: hidden; max-width: 100%;">
+            <div id="csig-iframe-container" style="margin: 20px 0;">
+                <!-- Iframe will be inserted here by the sidebar controls -->
+            </div>
         </div>
         
         <style>
+        #csig-iframe-wrapper {
+            width:100%;
+        }
         #csig-iframe-container {
-            overflow-x: auto;
+            overflow: hidden;
+            transform-origin: top left;
         }
         @media (max-width: 1200px) {
             #csig-iframe-container {
@@ -244,7 +252,6 @@ class Job_Post_Type {
                     $selected_option = $current_preset;
                 }
                 ?>
-                <option value="fixed" <?php selected($selected_option, 'fixed'); ?>><?php _e('Fixed (1200×800)', 'csig'); ?></option>
                 <option value="desktop" <?php selected($selected_option, 'desktop'); ?>><?php _e('Desktop (1200×800)', 'csig'); ?></option>
                 <option value="tablet" <?php selected($selected_option, 'tablet'); ?>><?php _e('Tablet (768×1024)', 'csig'); ?></option>
                 <option value="mobile" <?php selected($selected_option, 'mobile'); ?>><?php _e('Mobile (375×667)', 'csig'); ?></option>
@@ -263,9 +270,12 @@ class Job_Post_Type {
         </div>
         
         <!-- Run Job Button -->
-        <button type="button" class="button button-primary" id="csig-run-job" style="width: 100%; margin-bottom: 15px;">
+        <button type="button" class="button button-primary" id="csig-run-job" style="width: 100%; margin-bottom: 10px;">
             <?php _e('Generate Images Now', 'csig'); ?>
         </button>
+        <div id="csig-settings-changed-notice" style="display: none; color: #d63638; font-size: 11px; margin-bottom: 15px;">
+            <?php _e('Save the job to re-enable image generation after changing settings.', 'csig'); ?>
+        </div>
         
         <!-- Status Section -->
         <div id="csig-status" style="display: none; margin-bottom: 15px;">
@@ -284,15 +294,17 @@ class Job_Post_Type {
         </div>
         
         <script>
-        // Load iframe and handle viewport changes
         document.addEventListener('DOMContentLoaded', function() {
             const previewModeSelect = document.getElementById('csig-preview-mode');
             const customDimensions = document.getElementById('csig-custom-dimensions');
             const customWidth = document.getElementById('csig-custom-width');
             const customHeight = document.getElementById('csig-custom-height');
             const viewportSize = document.getElementById('csig-viewport-size');
+            const iframeWrapper = document.getElementById('csig-iframe-wrapper');
+            const iframeContainer = document.getElementById('csig-iframe-container');
             
             let currentIframe = null;
+            let currentDimensions = null;
             
             function getDimensions(mode) {
                 switch(mode) {
@@ -317,35 +329,27 @@ class Job_Post_Type {
                 }
             }
             
-            function createIframe(dimensions) {
-                // Remove existing iframe
-                if (currentIframe) {
-                    currentIframe.remove();
+            function ensureIframe() {
+                if (currentIframe && currentIframe.isConnected) {
+                    return currentIframe;
                 }
-                
-                // Find the iframe container in the main content area
-                const iframeContainer = document.getElementById('csig-iframe-container');
                 if (!iframeContainer) {
                     console.error('CSIG: Iframe container not found');
-                    return;
+                    return null;
                 }
                 
-                // Create new iframe
                 const iframe = document.createElement('iframe');
                 iframe.id = 'csig-preview-iframe';
                 iframe.src = '<?php echo esc_js($url); ?>';
-                iframe.style.width = dimensions.width + 'px';
-                iframe.style.height = dimensions.height + 'px';
                 iframe.style.border = '1px solid #ddd';
                 iframe.style.borderRadius = '4px';
                 iframe.style.display = 'block';
                 iframe.style.maxWidth = '100%';
                 
-                // Add iframe to container
+                iframeContainer.innerHTML = '';
                 iframeContainer.appendChild(iframe);
                 
                 iframe.onload = function() {
-                    // Inject CSS to hide admin bar
                     try {
                         const styleElement = document.createElement('style');
                         styleElement.textContent = '#wpadminbar { display: none !important; }';
@@ -359,29 +363,56 @@ class Job_Post_Type {
                 return iframe;
             }
             
+            function applyDimensions(dimensions) {
+                const iframe = ensureIframe();
+                if (!iframe) {
+                    return;
+                }
+                iframe.style.width = dimensions.width + 'px';
+                iframe.style.height = dimensions.height + 'px';
+            }
+            
+            function applyScale(dimensions) {
+                if (!iframeWrapper || !iframeContainer || !dimensions.width) {
+                    return;
+                }
+                const wrapperWidth = iframeWrapper.clientWidth;
+                if (!wrapperWidth) {
+                    return;
+                }
+                const rawScale = wrapperWidth / dimensions.width;
+                const scale = Math.min(rawScale, 1);
+                iframeContainer.style.transform = `scale(${scale})`;
+                iframeContainer.style.width = dimensions.width + 'px';
+                iframeContainer.style.height = dimensions.height + 'px';
+                iframeWrapper.style.height = (dimensions.height * scale) + 'px';
+            }
+            
             function handlePreviewModeChange() {
                 const mode = previewModeSelect ? previewModeSelect.value : 'desktop';
-                
                 if (customDimensions) {
                     customDimensions.style.display = mode === 'custom' ? 'block' : 'none';
                 }
-                
                 const dimensions = getDimensions(mode);
+                currentDimensions = dimensions;
                 updateViewportSize(mode);
-                
-                // Update iframe size
-                createIframe(dimensions);
+                applyDimensions(dimensions);
+                applyScale(dimensions);
             }
             
             // Initial load
             if (previewModeSelect) {
                 handlePreviewModeChange();
-                
-                // Handle changes
                 previewModeSelect.addEventListener('change', handlePreviewModeChange);
                 if (customWidth) customWidth.addEventListener('input', handlePreviewModeChange);
                 if (customHeight) customHeight.addEventListener('input', handlePreviewModeChange);
             }
+            
+            window.addEventListener('resize', function() {
+                if (currentDimensions) {
+                    applyScale(currentDimensions);
+                }
+            });
             
             // Make iframe available to the capture script
             window.csigCurrentIframe = function() {
@@ -405,7 +436,7 @@ class Job_Post_Type {
         
         // Check both nonces (from settings and capture metaboxes)
         $settings_nonce_valid = isset($_POST['csig_job_meta_nonce']) && wp_verify_nonce($_POST['csig_job_meta_nonce'], 'csig_save_job_meta');
-        $capture_nonce_valid = isset($_POST['job_capture_meta_box_nonce']) && wp_verify_nonce($_POST['job_capture_meta_box_nonce'], 'job_capture_meta_box');
+        $capture_nonce_valid = isset($_POST['job_capture_meta_box_nonce']) && wp_verify_nonce($_POST['job_capture_meta_box_nonce'], 'job_capture_meta');
         
         error_log('CSIG: Settings nonce valid: ' . ($settings_nonce_valid ? 'yes' : 'no'));
         error_log('CSIG: Capture nonce valid: ' . ($capture_nonce_valid ? 'yes' : 'no'));
@@ -489,13 +520,9 @@ class Job_Post_Type {
         $image_quality = get_post_meta($post->ID, '_csig_image_quality', true) ?: 'high';
         $save_folder = get_post_meta($post->ID, '_csig_save_folder', true) ?: 'csig-images';
         $retina_support = get_post_meta($post->ID, '_csig_retina_support', true);
-        $iframe_mode = get_post_meta($post->ID, '_csig_iframe_mode', true) ?: 'fixed';
-        $iframe_preset = get_post_meta($post->ID, '_csig_iframe_preset', true) ?: 'desktop';
-        $iframe_width = get_post_meta($post->ID, '_csig_iframe_width', true) ?: 1200;
-        $iframe_height = get_post_meta($post->ID, '_csig_iframe_height', true) ?: 800;
-        
+
         ?>
-        <table class="form-table">
+        <table class="form-table csig-job-settings">
             <tr>
                 <th><label for="csig_url"><?php _e('URL to Capture', 'csig'); ?></label></th>
                 <td><input type="url" id="csig_url" name="csig_url" value="<?php echo esc_attr($url); ?>" class="regular-text" required /></td>
@@ -556,46 +583,11 @@ class Job_Post_Type {
                     </label>
                 </td>
             </tr>
-            <tr>
-                <th><label><?php _e('Viewport Mode', 'csig'); ?></label></th>
-                <td>
-                    <label>
-                        <input type="radio" name="csig_iframe_mode" value="fixed" <?php checked($iframe_mode, 'fixed'); ?> /> 
-                        <strong><?php _e('Fixed Size', 'csig'); ?></strong>
-                        <p class="description" style="margin: 5px 0 10px 0;"><?php _e('For layouts with fixed pixel dimensions. Uses a standard desktop viewport.', 'csig'); ?></p>
-                    </label>
-                    
-                    <label>
-                        <input type="radio" name="csig_iframe_mode" value="responsive" <?php checked($iframe_mode, 'responsive'); ?> /> 
-                        <strong><?php _e('Responsive', 'csig'); ?></strong>
-                        <p class="description" style="margin: 5px 0 10px 0;"><?php _e('For responsive layouts that change based on viewport size.', 'csig'); ?></p>
-                    </label>
-                    
-                    <!-- Responsive options -->
-                    <div id="csig-responsive-options" style="margin-left: 20px; <?php echo $iframe_mode === 'responsive' ? '' : 'display: none;'; ?>">
-                        <label for="csig_iframe_preset"><?php _e('Viewport Size:', 'csig'); ?></label>
-                        <select id="csig_iframe_preset" name="csig_iframe_preset" style="margin-left: 10px;">
-                            <option value="desktop" <?php selected($iframe_preset, 'desktop'); ?>><?php _e('Desktop (1200×800)', 'csig'); ?></option>
-                            <option value="tablet" <?php selected($iframe_preset, 'tablet'); ?>><?php _e('Tablet (768×1024)', 'csig'); ?></option>
-                            <option value="mobile" <?php selected($iframe_preset, 'mobile'); ?>><?php _e('Mobile (375×667)', 'csig'); ?></option>
-                            <option value="custom" <?php selected($iframe_preset, 'custom'); ?>><?php _e('Custom', 'csig'); ?></option>
-                        </select>
-                        
-                        <div id="csig-custom-size" style="margin-top: 10px; <?php echo $iframe_preset === 'custom' ? '' : 'display: none;'; ?>">
-                            <input type="number" name="csig_iframe_width" value="<?php echo esc_attr($iframe_width); ?>" style="width: 80px;" placeholder="Width" /> × 
-                            <input type="number" name="csig_iframe_height" value="<?php echo esc_attr($iframe_height); ?>" style="width: 80px;" placeholder="Height" /> px
-                        </div>
-                    </div>
-                </td>
-            </tr>
         </table>
         
         <script>
         document.addEventListener('DOMContentLoaded', function() {
-            const modeRadios = document.querySelectorAll('input[name="csig_iframe_mode"]');
-            const responsiveOptions = document.getElementById('csig-responsive-options');
-            const presetSelect = document.getElementById('csig_iframe_preset');
-            const customSize = document.getElementById('csig-custom-size');
+
             
             function toggleResponsiveOptions() {
                 const isResponsive = document.querySelector('input[name="csig_iframe_mode"]:checked').value === 'responsive';
@@ -607,11 +599,37 @@ class Job_Post_Type {
                 customSize.style.display = isCustom ? 'block' : 'none';
             }
             
-            modeRadios.forEach(radio => {
-                radio.addEventListener('change', toggleResponsiveOptions);
-            });
             
-            presetSelect.addEventListener('change', toggleCustomSize);
+            
+            // Disable run button when settings change
+            const settingsFields = document.querySelectorAll('#csig_job_settings input, #csig_job_settings select, #csig_job_settings textarea');
+            console.log( 'settingsFields:', settingsFields );
+            
+            const runButton = document.getElementById('csig-run-job');
+            const notice = document.getElementById('csig-settings-changed-notice');
+            let originalRunText = runButton ? runButton.textContent : '';
+            let dirty = false;
+            
+            function markDirty() {
+                if (dirty) {
+                    return;
+                }
+                dirty = true;
+                if (runButton) {
+                    runButton.disabled = true;
+                    runButton.classList.add('disabled');
+                    originalRunText = originalRunText || runButton.textContent;
+                    runButton.textContent = '<?php echo esc_js(__('Save job to enable capture', 'csig')); ?>';
+                }
+                if (notice) {
+                    notice.style.display = 'block';
+                }
+            }
+            
+            settingsFields.forEach(field => {
+                field.addEventListener('input', markDirty);
+                field.addEventListener('change', markDirty);
+            });
         });
         </script>
         <?php
@@ -654,6 +672,193 @@ class Job_Post_Type {
             }
             ?>
         </div>
+
+        <?php
+        $generated_files = self::get_generated_files($post->ID);
+        $ajax_url = admin_url('admin-ajax.php');
+        $manage_nonce = wp_create_nonce('csig_manage_files');
+        ?>
+        <div 
+            class="misc-pub-section" 
+            id="csig-generated-files-container"
+            data-job-id="<?php echo esc_attr($post->ID); ?>"
+            data-nonce="<?php echo esc_attr($manage_nonce); ?>"
+            data-ajax-url="<?php echo esc_url($ajax_url); ?>"
+        >
+            <strong><?php _e('All Generated Files:', 'csig'); ?></strong><br>
+            <div class="csig-generated-files-actions" style="margin: 5px 0;">
+                <button
+                    type="button"
+                    class="button button-link-delete csig-delete-all-files"
+                    style="color: #b32d2e;"
+                    data-label="<?php echo esc_attr__('Delete All Files', 'csig'); ?>"
+                    <?php disabled(empty($generated_files)); ?>
+                >
+                    <?php _e('Delete All Files', 'csig'); ?>
+                </button>
+            </div>
+            <?php if (!empty($generated_files)) : ?>
+                <ul class="csig-generated-files" style="margin: 5px 0 0 0; padding-left: 15px; font-size: 12px;">
+                    <?php foreach ($generated_files as $url => $file) :
+                        $filename = isset($file['filename']) ? $file['filename'] : basename($url);
+                        $format = !empty($file['format']) ? strtoupper($file['format']) : __('File', 'csig');
+                        $generated_at = !empty($file['generated_at']) ? date_i18n(get_option('date_format') . ' ' . get_option('time_format'), strtotime($file['generated_at'])) : '';
+                        $size = !empty($file['size']) ? size_format((int) $file['size']) : '';
+                    ?>
+                    <li data-file-url="<?php echo esc_attr($url); ?>" style="margin-bottom: 6px;">
+                        <div>
+                            <a href="<?php echo esc_url($url); ?>" target="_blank"><?php echo esc_html($filename); ?></a>
+                            <span style="color: #666;">&mdash; <?php echo esc_html($format); ?><?php echo $size ? ' · ' . esc_html($size) : ''; ?><?php echo $generated_at ? ' · ' . esc_html($generated_at) : ''; ?></span>
+                        </div>
+                        <button type="button" class="button-link-delete csig-delete-file" style="color: #b32d2e;">&times; <?php _e('Delete', 'csig'); ?></button>
+                    </li>
+                    <?php endforeach; ?>
+                </ul>
+            <?php else : ?>
+                <em><?php _e('No files generated yet.', 'csig'); ?></em>
+            <?php endif; ?>
+        </div>
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const container = document.getElementById('csig-generated-files-container');
+            if (!container || container.dataset.csigBound === '1') {
+                return;
+            }
+
+            container.dataset.csigBound = '1';
+
+            container.addEventListener('click', async function(event) {
+                const deleteAllButton = event.target.closest('.csig-delete-all-files');
+                if (deleteAllButton) {
+                    event.preventDefault();
+
+                    if (!confirm('<?php echo esc_js(__('Delete all generated files for this job? This action cannot be undone.', 'csig')); ?>')) {
+                        return;
+                    }
+
+                    const originalLabel = deleteAllButton.dataset.label || deleteAllButton.textContent;
+                    deleteAllButton.disabled = true;
+                    deleteAllButton.textContent = '<?php echo esc_js(__('Deleting...', 'csig')); ?>';
+
+                    const formData = new FormData();
+                    formData.append('action', 'csig_delete_all_generated_files');
+                    formData.append('nonce', container.dataset.nonce);
+                    formData.append('job_id', container.dataset.jobId);
+
+                    try {
+                        const response = await fetch(container.dataset.ajaxUrl, {
+                            method: 'POST',
+                            credentials: 'same-origin',
+                            body: formData
+                        });
+                        const result = await response.json();
+
+                        if (!result.success) {
+                            const errorMessage = typeof result.data === 'string'
+                                ? result.data
+                                : (result.data && result.data.message) || '<?php echo esc_js(__('Something went wrong.', 'csig')); ?>';
+                            throw new Error(errorMessage);
+                        }
+
+                        const list = container.querySelector('ul.csig-generated-files');
+                        if (list) {
+                            list.remove();
+                        }
+
+                        const existingItems = container.querySelectorAll('li[data-file-url]');
+                        existingItems.forEach(item => item.remove());
+
+                        let emptyNotice = container.querySelector('em');
+                        if (!emptyNotice) {
+                            emptyNotice = document.createElement('em');
+                            emptyNotice.textContent = '<?php echo esc_js(__('No files generated yet.', 'csig')); ?>';
+                            container.appendChild(emptyNotice);
+                        }
+
+                        deleteAllButton.textContent = originalLabel;
+                    } catch (error) {
+                        alert(error.message);
+                        deleteAllButton.disabled = false;
+                        deleteAllButton.textContent = originalLabel;
+                        return;
+                    }
+
+                    deleteAllButton.disabled = true;
+                    return;
+                }
+
+                const target = event.target.closest('.csig-delete-file');
+                if (!target) {
+                    return;
+                }
+
+                event.preventDefault();
+
+                if (!confirm('<?php echo esc_js(__('Delete this generated file permanently?', 'csig')); ?>')) {
+                    return;
+                }
+
+                const listItem = target.closest('li[data-file-url]');
+                const fileUrl = listItem ? listItem.getAttribute('data-file-url') : null;
+                if (!fileUrl) {
+                    return;
+                }
+
+                const originalLabel = target.textContent;
+                target.disabled = true;
+                target.textContent = '<?php echo esc_js(__('Deleting...', 'csig')); ?>';
+
+                const formData = new FormData();
+                formData.append('action', 'csig_delete_generated_file');
+                formData.append('nonce', container.dataset.nonce);
+                formData.append('job_id', container.dataset.jobId);
+                formData.append('file_url', fileUrl);
+
+                try {
+                    const response = await fetch(container.dataset.ajaxUrl, {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        body: formData
+                    });
+                    const result = await response.json();
+
+                    if (!result.success) {
+                        throw new Error(result.data || '<?php echo esc_js(__('Something went wrong.', 'csig')); ?>');
+                    }
+
+                    if (listItem) {
+                        listItem.remove();
+                    }
+
+                    if (!container.querySelector('li[data-file-url]')) {
+                        const existingList = container.querySelector('ul.csig-generated-files');
+                        if (existingList) {
+                            existingList.remove();
+                        }
+
+                        let emptyNotice = container.querySelector('em');
+                        if (!emptyNotice) {
+                            emptyNotice = document.createElement('em');
+                            emptyNotice.textContent = '<?php echo esc_js(__('No files generated yet.', 'csig')); ?>';
+                            container.appendChild(emptyNotice);
+                        }
+
+                        const deleteAllBtn = container.querySelector('.csig-delete-all-files');
+                        if (deleteAllBtn) {
+                            deleteAllBtn.disabled = true;
+                            if (deleteAllBtn.dataset.label) {
+                                deleteAllBtn.textContent = deleteAllBtn.dataset.label;
+                            }
+                        }
+                    }
+                } catch (error) {
+                    alert(error.message);
+                    target.disabled = false;
+                    target.textContent = originalLabel;
+                }
+            });
+        });
+        </script>
         <?php
     }
     
@@ -809,14 +1014,103 @@ class Job_Post_Type {
     public static function update_job_stats($job_id, $generated_files = array()) {
         // Update last run time
         update_post_meta($job_id, '_csig_last_run', current_time('mysql'));
-        
+
         // Increment run count
         $run_count = get_post_meta($job_id, '_csig_run_count', true) ?: 0;
         update_post_meta($job_id, '_csig_run_count', $run_count + 1);
-        
+
         // Store last generated files
         if (!empty($generated_files)) {
             update_post_meta($job_id, '_csig_last_files', $generated_files);
         }
+    }
+
+    /**
+     * Return all recorded generated files for a job
+     */
+    public static function get_generated_files($job_id) {
+        $files = get_post_meta($job_id, '_csig_generated_files', true);
+
+        if (!is_array($files)) {
+            return array();
+        }
+
+        // Ensure newest first for display purposes
+        uasort($files, function ($a, $b) {
+            $timeA = isset($a['generated_at']) ? strtotime($a['generated_at']) : 0;
+            $timeB = isset($b['generated_at']) ? strtotime($b['generated_at']) : 0;
+
+            if ($timeA === $timeB) {
+                return 0;
+            }
+
+            return ($timeA > $timeB) ? -1 : 1;
+        });
+
+        return $files;
+    }
+
+    public static function get_generated_file($job_id, $file_url) {
+        if (!$job_id || empty($file_url)) {
+            return null;
+        }
+
+        $files = get_post_meta($job_id, '_csig_generated_files', true);
+
+        if (!is_array($files) || empty($files[$file_url])) {
+            return null;
+        }
+
+        return $files[$file_url];
+    }
+
+    /**
+     * Record a generated file against a job post.
+     */
+    public static function add_generated_file($job_id, $file_data) {
+        if (!$job_id || empty($file_data['url'])) {
+            return;
+        }
+
+        $defaults = array(
+            'filename'     => basename($file_data['url']),
+            'path'         => '',
+            'format'       => '',
+            'generated_at' => current_time('mysql'),
+            'size'         => null,
+        );
+
+        $file_record = wp_parse_args($file_data, $defaults);
+
+        $files = get_post_meta($job_id, '_csig_generated_files', true);
+        if (!is_array($files)) {
+            $files = array();
+        }
+
+        // Use public URL as key so overwrites replace existing records
+        $files[$file_record['url']] = $file_record;
+
+        update_post_meta($job_id, '_csig_generated_files', $files);
+    }
+
+    /**
+     * Remove a previously recorded file and return its path for deletion.
+     */
+    public static function remove_generated_file($job_id, $file_url) {
+        if (!$job_id || empty($file_url)) {
+            return null;
+        }
+
+        $files = get_post_meta($job_id, '_csig_generated_files', true);
+        if (!is_array($files) || empty($files[$file_url])) {
+            return null;
+        }
+
+        $path = isset($files[$file_url]['path']) ? $files[$file_url]['path'] : null;
+
+        unset($files[$file_url]);
+        update_post_meta($job_id, '_csig_generated_files', $files);
+
+        return $path;
     }
 }
