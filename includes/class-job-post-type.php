@@ -107,9 +107,8 @@ class Job_Post_Type {
         if (($hook === 'post.php' || $hook === 'post-new.php') && 
             ($post && $post->post_status === 'publish')) {
             
-            wp_enqueue_script('html-to-image', 'https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.js', [], CSIG_VERSION, true);
-            wp_enqueue_script('jspdf', 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/3.0.3/jspdf.umd.min.js', [], CSIG_VERSION, true);
-            wp_enqueue_script('csig-job-editor', CSIG_PLUGIN_URL . 'assets/js/csig-job-editor.js', ['html-to-image', 'jspdf'], CSIG_VERSION, true);
+            wp_enqueue_script('csig-html-to-image', CSIG_PLUGIN_URL . 'assets/js/vendor/html-to-image.js', [], CSIG_VERSION, true);
+            wp_enqueue_script('csig-job-editor', CSIG_PLUGIN_URL . 'assets/js/csig-job-editor.js', ['csig-html-to-image'], CSIG_VERSION, true);
             
             $job_settings = self::get_job_settings($post->ID);
             
@@ -153,6 +152,10 @@ class Job_Post_Type {
         ?>
         <div id="csig-iframe-wrapper" style="overflow: hidden; max-width: 100%;">
             <div id="csig-iframe-container" style="margin: 20px 0;">
+                <div class="csig-iframe-loading" role="status" aria-live="polite" aria-busy="true">
+                    <span class="csig-spinner" aria-hidden="true"></span>
+                    <span class="csig-loading-text"><?php esc_html_e('Loading preview...', 'csig'); ?></span>
+                </div>
                 <!-- Iframe will be inserted here by the sidebar controls -->
             </div>
         </div>
@@ -164,6 +167,40 @@ class Job_Post_Type {
         #csig-iframe-container {
             overflow: hidden;
             transform-origin: top left;
+            position: relative;
+            min-height: 120px;
+        }
+        #csig-iframe-container .csig-iframe-loading {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            color: #4c4f56;
+            font-size: 13px;
+            z-index: 2;
+            transition: opacity 0.2s ease, visibility 0.2s ease;
+        }
+        #csig-iframe-container .csig-iframe-loading.csig-is-hidden {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+        #csig-iframe-container .csig-spinner {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            border: 2px solid #ccd0d4;
+            border-top-color: #2271b1;
+            animation: csig-spin 0.8s linear infinite;
+        }
+        @keyframes csig-spin {
+            to {
+                transform: rotate(360deg);
+            }
         }
         @media (max-width: 1200px) {
             #csig-iframe-container {
@@ -199,7 +236,6 @@ class Job_Post_Type {
         
         $url = get_post_meta($post->ID, '_csig_url', true);
         $selector = get_post_meta($post->ID, '_csig_selector', true) ?: '.csig-card';
-        $output_format = get_post_meta($post->ID, '_csig_output_format', true) ?: 'raster';
         $image_quality = get_post_meta($post->ID, '_csig_image_quality', true) ?: 'high';
         $quality_map = array('low' => 1, 'high' => 2, 'ultra' => 3);
         $pixel_ratio = $quality_map[$image_quality] ?? 2;
@@ -222,9 +258,6 @@ class Job_Post_Type {
             <div style="margin-bottom: 8px;">
                 <strong><?php _e('Selector:', 'csig'); ?></strong><br>
                 <code style="font-size: 11px;"><?php echo esc_html($selector); ?></code>
-            </div>
-            <div style="margin-bottom: 8px;">
-                <strong><?php _e('Format:', 'csig'); ?></strong> <?php echo esc_html(ucfirst($output_format)); ?>
             </div>
             <div style="margin-bottom: 8px;">
                 <strong><?php _e('Quality:', 'csig'); ?></strong> <?php echo esc_html(ucfirst($image_quality)); ?> (<?php echo $pixel_ratio; ?>x)
@@ -330,14 +363,28 @@ class Job_Post_Type {
             }
             
             function ensureIframe() {
+                const loadingIndicator = iframeContainer ? iframeContainer.querySelector('.csig-iframe-loading') : null;
+                const loadingText = loadingIndicator ? loadingIndicator.querySelector('.csig-loading-text') : null;
                 if (currentIframe && currentIframe.isConnected) {
+                    if (loadingIndicator) {
+                        loadingIndicator.classList.add('csig-is-hidden');
+                        loadingIndicator.setAttribute('aria-busy', 'false');
+                    }
                     return currentIframe;
                 }
                 if (!iframeContainer) {
                     console.error('CSIG: Iframe container not found');
                     return null;
                 }
-                
+
+                if (loadingIndicator) {
+                    loadingIndicator.classList.remove('csig-is-hidden');
+                    loadingIndicator.setAttribute('aria-busy', 'true');
+                    if (loadingText) {
+                        loadingText.textContent = '<?php echo esc_js(__('Loading preview...', 'csig')); ?>';
+                    }
+                }
+
                 const iframe = document.createElement('iframe');
                 iframe.id = 'csig-preview-iframe';
                 iframe.src = '<?php echo esc_js($url); ?>';
@@ -345,11 +392,19 @@ class Job_Post_Type {
                 iframe.style.borderRadius = '4px';
                 iframe.style.display = 'block';
                 iframe.style.maxWidth = '100%';
-                
-                iframeContainer.innerHTML = '';
+
+                Array.from(iframeContainer.children).forEach((child) => {
+                    if (!child.classList || !child.classList.contains('csig-iframe-loading')) {
+                        child.remove();
+                    }
+                });
                 iframeContainer.appendChild(iframe);
-                
-                iframe.onload = function() {
+
+                iframe.addEventListener('load', function() {
+                    if (loadingIndicator) {
+                        loadingIndicator.classList.add('csig-is-hidden');
+                        loadingIndicator.setAttribute('aria-busy', 'false');
+                    }
                     try {
                         const styleElement = document.createElement('style');
                         styleElement.textContent = '#wpadminbar { display: none !important; }';
@@ -357,8 +412,18 @@ class Job_Post_Type {
                     } catch(e) {
                         console.log('Could not inject styles (CORS)');
                     }
-                };
-                
+                });
+
+                iframe.addEventListener('error', function() {
+                    if (loadingIndicator) {
+                        loadingIndicator.classList.remove('csig-is-hidden');
+                        loadingIndicator.setAttribute('aria-busy', 'false');
+                        if (loadingText) {
+                            loadingText.textContent = '<?php echo esc_js(__('Unable to load preview', 'csig')); ?>';
+                        }
+                    }
+                });
+
                 currentIframe = iframe;
                 return iframe;
             }
@@ -468,7 +533,6 @@ class Job_Post_Type {
         $meta_fields = array(
             '_csig_url' => 'esc_url_raw',
             '_csig_selector' => 'sanitize_text_field',
-            '_csig_output_format' => 'sanitize_text_field',
             '_csig_image_quality' => 'sanitize_text_field',
             '_csig_save_folder' => 'sanitize_text_field',
             '_csig_retina_support' => 'sanitize_text_field',
@@ -516,7 +580,6 @@ class Job_Post_Type {
         // Get current values
         $url = get_post_meta($post->ID, '_csig_url', true);
         $selector = get_post_meta($post->ID, '_csig_selector', true) ?: '.csig-card';
-        $output_format = get_post_meta($post->ID, '_csig_output_format', true) ?: 'raster';
         $image_quality = get_post_meta($post->ID, '_csig_image_quality', true) ?: 'high';
         $save_folder = get_post_meta($post->ID, '_csig_save_folder', true) ?: 'csig-images';
         $retina_support = get_post_meta($post->ID, '_csig_retina_support', true);
@@ -535,16 +598,6 @@ class Job_Post_Type {
                         <?php _e('CSS selector for elements to capture (e.g., .csig-card, #my-id)', 'csig'); ?><br>
                         <strong><?php _e('Custom Filenames:', 'csig'); ?></strong> <?php _e('Add <code>csig-filename="filename"</code> attribute to elements for custom file names. Email addresses will be automatically sanitized (e.g., john@company.com becomes john-at-company-com).', 'csig'); ?>
                     </p>
-                </td>
-            </tr>
-            <tr>
-                <th><label for="csig_output_format"><?php _e('Output Format', 'csig'); ?></label></th>
-                <td>
-                    <select id="csig_output_format" name="csig_output_format">
-                        <option value="raster" <?php selected($output_format, 'raster'); ?>><?php _e('Raster (PNG)', 'csig'); ?></option>
-                        <option value="vector" <?php selected($output_format, 'vector'); ?>><?php _e('Vector (PDF)', 'csig'); ?></option>
-                        <option value="both" <?php selected($output_format, 'both'); ?>><?php _e('Both', 'csig'); ?></option>
-                    </select>
                 </td>
             </tr>
             <tr>
@@ -904,7 +957,6 @@ class Job_Post_Type {
             'title' => $columns['title'],
             'url' => __('URL', 'csig'),
             'selector' => __('Selector', 'csig'),
-            'format' => __('Format', 'csig'),
             'quality' => __('Quality', 'csig'),
             'last_run' => __('Last Run', 'csig'),
             'date' => $columns['date'],
@@ -924,11 +976,6 @@ class Job_Post_Type {
             case 'selector':
                 $selector = get_post_meta($post_id, '_csig_selector', true);
                 echo '<code>' . esc_html($selector ?: '.csig-card') . '</code>';
-                break;
-                
-            case 'format':
-                $format = get_post_meta($post_id, '_csig_output_format', true);
-                echo esc_html(ucfirst($format ?: 'raster'));
                 break;
                 
             case 'quality':
@@ -960,7 +1007,6 @@ class Job_Post_Type {
         
         $url = get_post_meta($job_id, '_csig_url', true);
         $selector = get_post_meta($job_id, '_csig_selector', true) ?: '.csig-card';
-        $output_format = get_post_meta($job_id, '_csig_output_format', true) ?: 'raster';
         $image_quality = get_post_meta($job_id, '_csig_image_quality', true) ?: 'high';
         $save_folder = get_post_meta($job_id, '_csig_save_folder', true) ?: 'csig-images';
         $retina_support = get_post_meta($job_id, '_csig_retina_support', true) === '1';
@@ -998,7 +1044,7 @@ class Job_Post_Type {
         return array(
             'url' => $url,
             'selector' => $selector,
-            'outputFormat' => $output_format,
+            'outputFormat' => 'raster',
             'saveFolder' => $save_folder,
             'imageQuality' => $image_quality,
             'pixelRatio' => $quality_map[$image_quality] ?? 2,

@@ -159,7 +159,6 @@ document.addEventListener('DOMContentLoaded', function() {
         
         const url = csigJobData.jobUrl;
         const settings = csigJobData.settings;
-        const format = settings.outputFormat;
         
         // Use existing iframe instead of creating new one
         const iframe = window.csigCurrentIframe ? window.csigCurrentIframe() : null;
@@ -290,110 +289,48 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 console.log('CSIG: Custom filename found:', customFilename, '-> sanitized:', sanitizedFilename);
 
-                // Generate PNG if needed
-                if (format === 'raster' || format === 'both') {
-                    try {
-                        console.log('CSIG: Generating PNG for element', i + 1);
-                        
-                        const pngData = await htmlToImage.toPng(element, {
-                            quality: 1,
-                            pixelRatio: settings.pixelRatio,
-                            useCORS: true,
-                            allowTaint: true,
-                            skipFonts: false,
-                            cacheBust: true
-                        });
-                        
-                        console.log('CSIG: PNG generated, sending to server...');
+                try {
+                    console.log('CSIG: Generating PNG for element', i + 1);
 
-                        const formData = new FormData();
-                        formData.append('action', 'csig_save_image');
-                        formData.append('nonce', csigJobData.nonce);
-                        formData.append('image_data', pngData);
-                        formData.append('element_index', i);
-                        formData.append('job_id', csigJobData.jobId);
-                        formData.append('overwrite_files', settings.overwriteFiles ? '1' : '0');
-                        
-                        // Send custom filename if available
-                        if (sanitizedFilename) {
-                            formData.append('custom_filename', sanitizedFilename);
-                        }
+                    const pngData = await htmlToImage.toPng(element, {
+                        quality: 1,
+                        pixelRatio: settings.pixelRatio,
+                        useCORS: true,
+                        allowTaint: true,
+                        skipFonts: false,
+                        cacheBust: true
+                    });
 
-                        const pngResponse = await fetch(csigJobData.ajaxUrl, {
-                            method: 'POST',
-                            body: formData
-                        });
+                    console.log('CSIG: PNG generated, sending to server...');
 
-                        const pngResult = await pngResponse.json();
-                        console.log('CSIG: PNG save result:', pngResult);
-                        
-                        if (pngResult.success) {
-                            generatedFiles.push(pngResult.data.url);
-                            appendGeneratedFileToList(pngResult.data.url, 'png');
-                        } else {
-                            console.error('CSIG: PNG save failed:', pngResult);
-                        }
-                    } catch (error) {
-                        console.error('CSIG: PNG generation failed:', error);
+                    const formData = new FormData();
+                    formData.append('action', 'csig_save_image');
+                    formData.append('nonce', csigJobData.nonce);
+                    formData.append('image_data', pngData);
+                    formData.append('element_index', i);
+                    formData.append('job_id', csigJobData.jobId);
+                    formData.append('overwrite_files', settings.overwriteFiles ? '1' : '0');
+
+                    if (sanitizedFilename) {
+                        formData.append('custom_filename', sanitizedFilename);
                     }
-                }
 
-                // Generate PDF if needed
-                if (format === 'vector' || format === 'both') {
-                    try {
-                        console.log('CSIG: Generating PDF for element', i + 1);
-                        
-                        const canvas = await htmlToImage.toCanvas(element, {
-                            quality: 1,
-                            pixelRatio: 2,
-                            useCORS: true,
-                            allowTaint: true,
-                            skipFonts: false,
-                            cacheBust: true
-                        });
+                    const pngResponse = await fetch(csigJobData.ajaxUrl, {
+                        method: 'POST',
+                        body: formData
+                    });
 
-                        const { jsPDF } = window.jspdf;
-                        const pdf = new jsPDF({
-                            orientation: canvas.width > canvas.height ? 'landscape' : 'portrait',
-                            unit: 'px',
-                            format: [canvas.width, canvas.height]
-                        });
+                    const pngResult = await pngResponse.json();
+                    console.log('CSIG: PNG save result:', pngResult);
 
-                        pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, canvas.width, canvas.height);
-                        const base64data = pdf.output('datauristring');
-                        
-                        console.log('CSIG: PDF generated, sending to server...');
-
-                        const formData = new FormData();
-                        formData.append('action', 'csig_save_pdf');
-                        formData.append('nonce', csigJobData.nonce);
-                        formData.append('pdf_data', base64data);
-                        formData.append('element_index', i);
-                        formData.append('job_id', csigJobData.jobId);
-                        formData.append('overwrite_files', settings.overwriteFiles ? '1' : '0');
-                        
-                        // Send custom filename if available
-                        if (sanitizedFilename) {
-                            formData.append('custom_filename', sanitizedFilename);
-                        }
-
-                        const pdfResponse = await fetch(csigJobData.ajaxUrl, {
-                            method: 'POST',
-                            body: formData
-                        });
-
-                        const pdfResult = await pdfResponse.json();
-                        console.log('CSIG: PDF save result:', pdfResult);
-                        
-                        if (pdfResult.success) {
-                            generatedFiles.push(pdfResult.data.url);
-                            appendGeneratedFileToList(pdfResult.data.url, 'pdf');
-                        } else {
-                            console.error('CSIG: PDF save failed:', pdfResult);
-                        }
-                    } catch (error) {
-                        console.error('CSIG: PDF generation failed:', error);
+                    if (pngResult.success) {
+                        generatedFiles.push(pngResult.data.url);
+                        appendGeneratedFileToList(pngResult.data.url, 'png');
+                    } else {
+                        console.error('CSIG: PNG save failed:', pngResult);
                     }
+                } catch (error) {
+                    console.error('CSIG: PNG generation failed:', error);
                 }
             }
 

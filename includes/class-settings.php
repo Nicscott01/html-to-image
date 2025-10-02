@@ -147,7 +147,7 @@ class Settings {
             'pixelRatio' => $quality_map[ $job->image_quality ] ?? 2,
             'retinaSupport' => $job->retina_support == 1,
             'selector' => $job->selector,
-            'outputFormat' => $job->output_format,
+            'outputFormat' => 'raster',
             'iframeWidth' => $job->iframe_width,
             'iframeHeight' => $job->iframe_height
         ];
