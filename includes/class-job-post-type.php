@@ -107,9 +107,9 @@ class Job_Post_Type {
         if (($hook === 'post.php' || $hook === 'post-new.php') && 
             ($post && $post->post_status === 'publish')) {
             
-            wp_enqueue_script('html-to-image', 'https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.js', [], CSIG_VERSION, true);
-            wp_enqueue_script('jspdf', 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/3.0.3/jspdf.umd.min.js', [], CSIG_VERSION, true);
-            wp_enqueue_script('csig-job-editor', CSIG_PLUGIN_URL . 'assets/js/csig-job-editor.js', ['html-to-image', 'jspdf'], CSIG_VERSION, true);
+            wp_enqueue_script('html-to-image', CSIG_PLUGIN_URL . 'assets/js/html-to-image.js', [], CSIG_VERSION, true);
+            //wp_enqueue_script('jspdf', 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/3.0.3/jspdf.umd.min.js', [], CSIG_VERSION, true);
+            wp_enqueue_script('csig-job-editor', CSIG_PLUGIN_URL . 'assets/js/csig-job-editor.js', ['html-to-image'], CSIG_VERSION, true);
             
             $job_settings = self::get_job_settings($post->ID);
             
@@ -294,7 +294,40 @@ class Job_Post_Type {
         </div>
         
         <script>
+        // Define iframe ready callback globally first
+        window.csigIframeReady = false;
+        window.csigLocalStateHandlers = [];
+        
+        window.csigMarkIframeReady = function() {
+            console.log('CSIG: markIframeReady called globally');
+            window.csigIframeReady = true;
+            
+            // Enable button immediately with force
+            const runButton = document.getElementById('csig-run-job');
+            if (runButton) {
+                runButton.disabled = false;
+                runButton.removeAttribute('disabled');
+                runButton.classList.remove('disabled');
+                runButton.textContent = '<?php echo esc_js(__('Generate Images Now', 'csig')); ?>';
+                console.log('CSIG: Button enabled by global iframe ready');
+                console.log('CSIG: Button state after enable - disabled:', runButton.disabled, 'classes:', Array.from(runButton.classList));
+            } else {
+                console.error('CSIG: Run button not found when trying to enable');
+            }
+            
+            // Call any local state handlers that have been registered
+            window.csigLocalStateHandlers.forEach(function(handler) {
+                try {
+                    handler();
+                } catch(e) {
+                    console.error('CSIG: Error in local state handler:', e);
+                }
+            });
+        };
+        
         document.addEventListener('DOMContentLoaded', function() {
+            console.log('CSIG: Main DOMContentLoaded fired');
+            
             const previewModeSelect = document.getElementById('csig-preview-mode');
             const customDimensions = document.getElementById('csig-custom-dimensions');
             const customWidth = document.getElementById('csig-custom-width');
@@ -302,6 +335,10 @@ class Job_Post_Type {
             const viewportSize = document.getElementById('csig-viewport-size');
             const iframeWrapper = document.getElementById('csig-iframe-wrapper');
             const iframeContainer = document.getElementById('csig-iframe-container');
+            
+            // Test if button exists immediately
+            const testButton = document.getElementById('csig-run-job');
+            console.log('CSIG: Button found in main script:', !!testButton);
 
             let currentIframe = null;
             let currentDimensions = null;
@@ -380,15 +417,18 @@ class Job_Post_Type {
 
                 iframe.onload = function() {
                     // Remove spinner once loaded
-                    //Todo: enable #csig-run-job button upon loading.
+                    console.log('CSIG: Iframe loaded, enabling button');
                     if (spinner && spinner.parentNode) {
-                        const runButton = document.getElementById('csig-run-job');
-                        if (runButton) {
-                            runButton.disabled = false;
-                        }
-
                         spinner.parentNode.removeChild(spinner);
                     }
+                    
+                    // Mark iframe as ready
+                    if (window.csigMarkIframeReady) {
+                        window.csigMarkIframeReady();
+                    } else {
+                        console.error('CSIG: csigMarkIframeReady function not found');
+                    }
+                    
                     try {
                         const styleElement = document.createElement('style');
                         styleElement.textContent = '#wpadminbar { display: none !important; }';
@@ -585,8 +625,8 @@ class Job_Post_Type {
                 <td>
                     <select id="csig_output_format" name="csig_output_format">
                         <option value="raster" <?php selected($output_format, 'raster'); ?>><?php _e('Raster (PNG)', 'csig'); ?></option>
-                        <option value="vector" <?php selected($output_format, 'vector'); ?>><?php _e('Vector (PDF)', 'csig'); ?></option>
-                        <option value="both" <?php selected($output_format, 'both'); ?>><?php _e('Both', 'csig'); ?></option>
+                        <!--option value="vector" <?php selected($output_format, 'vector'); ?>><?php _e('Vector (PDF)', 'csig'); ?></option-->
+                        <!--option value="both" <?php selected($output_format, 'both'); ?>><?php _e('Both', 'csig'); ?></option-->
                     </select>
                 </td>
             </tr>
@@ -630,16 +670,23 @@ class Job_Post_Type {
         
         <script>
         document.addEventListener('DOMContentLoaded', function() {
-
+            // Get elements for this section
+            const responsiveOptions = document.getElementById('csig-responsive-options');
+            const presetSelect = document.getElementById('csig-viewport-preset');
+            const customSize = document.getElementById('csig-custom-size');
             
             function toggleResponsiveOptions() {
                 const isResponsive = document.querySelector('input[name="csig_iframe_mode"]:checked').value === 'responsive';
-                responsiveOptions.style.display = isResponsive ? 'block' : 'none';
+                if (responsiveOptions) {
+                    responsiveOptions.style.display = isResponsive ? 'block' : 'none';
+                }
             }
             
             function toggleCustomSize() {
-                const isCustom = presetSelect.value === 'custom';
-                customSize.style.display = isCustom ? 'block' : 'none';
+                const isCustom = presetSelect ? presetSelect.value === 'custom' : false;
+                if (customSize) {
+                    customSize.style.display = isCustom ? 'block' : 'none';
+                }
             }
             
             
@@ -650,24 +697,61 @@ class Job_Post_Type {
             
             const runButton = document.getElementById('csig-run-job');
             const notice = document.getElementById('csig-settings-changed-notice');
-            let originalRunText = runButton ? runButton.textContent : '';
+            let originalRunText = '<?php echo esc_js(__('Generate Images Now', 'csig')); ?>';
             let dirty = false;
+            let iframeReady = false;
+            
+            function updateButtonState() {
+                if (!runButton) return;
+                
+                console.log('CSIG: Updating button state - dirty:', dirty, 'iframeReady:', iframeReady);
+                
+                if (dirty) {
+                    runButton.disabled = true;
+                    runButton.classList.add('disabled');
+                    runButton.textContent = '<?php echo esc_js(__('Save job to enable capture', 'csig')); ?>';
+                } else if (!iframeReady) {
+                    runButton.disabled = true;
+                    runButton.classList.add('disabled');
+                    runButton.textContent = '<?php echo esc_js(__('Waiting for preview to load...', 'csig')); ?>';
+                } else {
+                    runButton.disabled = false;
+                    runButton.classList.remove('disabled');
+                    runButton.textContent = originalRunText;
+                }
+            }
             
             function markDirty() {
                 if (dirty) {
                     return;
                 }
+                console.log('CSIG: Settings changed, marking as dirty');
                 dirty = true;
-                if (runButton) {
-                    runButton.disabled = true;
-                    runButton.classList.add('disabled');
-                    originalRunText = originalRunText || runButton.textContent;
-                    runButton.textContent = '<?php echo esc_js(__('Save job to enable capture', 'csig')); ?>';
-                }
+                updateButtonState();
                 if (notice) {
                     notice.style.display = 'block';
                 }
             }
+            
+            // Local iframe ready handler - updates local state
+            function handleIframeReady() {
+                console.log('CSIG: Local iframe ready handler called');
+                iframeReady = true;
+                updateButtonState();
+            }
+            
+            // Register our local handler with the global system
+            if (window.csigLocalStateHandlers) {
+                window.csigLocalStateHandlers.push(handleIframeReady);
+            }
+            
+            // If iframe is already ready, call our handler immediately
+            if (window.csigIframeReady) {
+                handleIframeReady();
+            }
+            
+            // Initial button state
+            updateButtonState();
             
             settingsFields.forEach(field => {
                 field.addEventListener('input', markDirty);

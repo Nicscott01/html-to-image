@@ -224,12 +224,24 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 console.log('CSIG: Found', totalImages, 'images to load (retina:', isRetina, ', pixel ratio:', settings.pixelRatio, ')');
 
+                // Force reload all images with cache busting for consistent rendering
+                const timestamp = Date.now();
+                images.forEach((img, index) => {
+                    const originalSrc = img.src;
+                    // Add timestamp to force reload, but preserve query params
+                    const separator = originalSrc.includes('?') ? '&' : '?';
+                    const newSrc = `${originalSrc}${separator}_csig_cb=${timestamp}&_img=${index}`;
+                    
+                    console.log(`CSIG: Force reloading image ${index}: ${originalSrc} -> ${newSrc}`);
+                    img.src = newSrc;
+                });
+
                 const finish = () => {
                     if (timeoutId) {
                         clearTimeout(timeoutId);
                     }
                     console.log('CSIG: Image loading complete (loaded:', loadedCount, '/', totalImages, ')');
-                    const finalWait = isRetina ? 2000 : 1000; // Longer wait for retina
+                    const finalWait = isRetina ? 3000 : 2000; // Extra wait time after force reload
                     setTimeout(resolve, finalWait);
                 };
 
@@ -345,15 +357,21 @@ document.addEventListener('DOMContentLoaded', function() {
                         // Progressive fallback for high pixel ratios
                         try {
                             // First attempt with requested pixel ratio
-                            pngData = await htmlToImage.toPng(element, {
+                            const renderOptions = {
                                 quality: parseFloat(settings.imageQuality) === 'high' ? 0.95 : parseFloat(settings.imageQuality) === 'ultra' ? 1 : 0.8,
                                 pixelRatio: actualPixelRatio,
                                 useCORS: true,
                                 allowTaint: true,
                                 skipFonts: false,
                                 cacheBust: true,
-                                backgroundColor: '#ffffff'
-                            });
+                                backgroundColor: '#ffffff',
+                                // Force fresh render by adding timestamp
+                                fetchRequestInit: {
+                                    cache: 'no-cache'
+                                }
+                            };
+                            
+                            pngData = await htmlToImage.toPng(element, renderOptions);
                         } catch (highResError) {
                             console.warn('CSIG: High resolution failed, trying lower pixel ratio:', highResError);
                             
@@ -370,7 +388,10 @@ document.addEventListener('DOMContentLoaded', function() {
                                         allowTaint: true,
                                         skipFonts: false,
                                         cacheBust: true,
-                                        backgroundColor: '#ffffff'
+                                        backgroundColor: '#ffffff',
+                                        fetchRequestInit: {
+                                            cache: 'no-cache'
+                                        }
                                     });
                                 } catch (mediumResError) {
                                     console.warn('CSIG: Medium resolution failed, trying pixel ratio 1:', mediumResError);
@@ -383,8 +404,11 @@ document.addEventListener('DOMContentLoaded', function() {
                                         useCORS: false,
                                         allowTaint: false,
                                         skipFonts: true,
-                                        cacheBust: false,
-                                        backgroundColor: '#ffffff'
+                                        cacheBust: true, // Keep cache busting even in fallback
+                                        backgroundColor: '#ffffff',
+                                        fetchRequestInit: {
+                                            cache: 'no-cache'
+                                        }
                                     });
                                 }
                             } else {
@@ -453,7 +477,10 @@ document.addEventListener('DOMContentLoaded', function() {
                                 allowTaint: true,
                                 skipFonts: false,
                                 cacheBust: true,
-                                backgroundColor: '#ffffff'
+                                backgroundColor: '#ffffff',
+                                fetchRequestInit: {
+                                    cache: 'no-cache'
+                                }
                             });
                         } catch (pdfError) {
                             console.warn('CSIG: PDF generation at high resolution failed, trying lower resolution:', pdfError);
@@ -466,7 +493,10 @@ document.addEventListener('DOMContentLoaded', function() {
                                 allowTaint: true,
                                 skipFonts: false,
                                 cacheBust: true,
-                                backgroundColor: '#ffffff'
+                                backgroundColor: '#ffffff',
+                                fetchRequestInit: {
+                                    cache: 'no-cache'
+                                }
                             });
                         }
 

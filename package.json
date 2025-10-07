@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "html-to-image": "1.11.11"
+  },
+  "scripts": {
+    "move-html-to-image": "mkdir -p assets/js && mv node_modules/html-to-image/dist/html-to-image.js assets/js/",
+    "postinstall": "npm run move-html-to-image"
+  }
+}
