@@ -152,7 +152,7 @@ class Job_Post_Type {
         // Just add a target div for the iframe - the sidebar controls will populate it
         ?>
         <div id="csig-iframe-wrapper" style="overflow: hidden; max-width: 100%;">
-            <div id="csig-iframe-container" style="margin: 20px 0;">
+            <div id="csig-iframe-container" style="margin: 20px 0; background-color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #ddd; position: relative;">
                 <!-- Iframe will be inserted here by the sidebar controls -->
             </div>
         </div>
@@ -270,7 +270,7 @@ class Job_Post_Type {
         </div>
         
         <!-- Run Job Button -->
-        <button type="button" class="button button-primary" id="csig-run-job" style="width: 100%; margin-bottom: 10px;">
+        <button type="button" class="button button-primary" id="csig-run-job" style="width: 100%; margin-bottom: 10px;" disabled>
             <?php _e('Generate Images Now', 'csig'); ?>
         </button>
         <div id="csig-settings-changed-notice" style="display: none; color: #d63638; font-size: 11px; margin-bottom: 15px;">
@@ -302,12 +302,12 @@ class Job_Post_Type {
             const viewportSize = document.getElementById('csig-viewport-size');
             const iframeWrapper = document.getElementById('csig-iframe-wrapper');
             const iframeContainer = document.getElementById('csig-iframe-container');
-            
+
             let currentIframe = null;
             let currentDimensions = null;
-            
+
             function getDimensions(mode) {
-                switch(mode) {
+                switch (mode) {
                     case 'tablet':
                         return { width: 768, height: 1024 };
                     case 'mobile':
@@ -321,14 +321,14 @@ class Job_Post_Type {
                         return { width: 1200, height: 800 };
                 }
             }
-            
+
             function updateViewportSize(mode) {
                 const dims = getDimensions(mode);
                 if (viewportSize) {
                     viewportSize.textContent = dims.width + '×' + dims.height + 'px';
                 }
             }
-            
+
             function ensureIframe() {
                 if (currentIframe && currentIframe.isConnected) {
                     return currentIframe;
@@ -337,7 +337,39 @@ class Job_Post_Type {
                     console.error('CSIG: Iframe container not found');
                     return null;
                 }
-                
+
+                // Create spinner element
+                const spinner = document.createElement('div');
+                spinner.id = 'csig-iframe-spinner';
+                spinner.style.position = 'absolute';
+                spinner.style.top = '50%';
+                spinner.style.left = '50%';
+                spinner.style.transform = 'translate(-50%, -50%)';
+                spinner.style.border = '4px solid #f3f3f3';
+                spinner.style.borderTop = '4px solid #3498db';
+                spinner.style.borderRadius = '50%';
+                spinner.style.width = '30px';
+                spinner.style.height = '30px';
+                spinner.style.animation = 'spin 1s linear infinite';
+
+                // Append spinner animation style if not present
+                if (!document.getElementById('csig-spinner-style')) {
+                    const style = document.createElement('style');
+                    style.id = 'csig-spinner-style';
+                    style.textContent = `
+                        @keyframes spin {
+                            0% { transform: rotate(0deg); }
+                            100% { transform: rotate(360deg); }
+                        }
+                    `;
+                    document.head.appendChild(style);
+                }
+
+                // Ensure container is positioned correctly
+                iframeContainer.style.position = 'relative';
+                iframeContainer.innerHTML = '';
+                iframeContainer.appendChild(spinner);
+
                 const iframe = document.createElement('iframe');
                 iframe.id = 'csig-preview-iframe';
                 iframe.src = '<?php echo esc_js($url); ?>';
@@ -345,11 +377,18 @@ class Job_Post_Type {
                 iframe.style.borderRadius = '4px';
                 iframe.style.display = 'block';
                 iframe.style.maxWidth = '100%';
-                
-                iframeContainer.innerHTML = '';
-                iframeContainer.appendChild(iframe);
-                
+
                 iframe.onload = function() {
+                    // Remove spinner once loaded
+                    //Todo: enable #csig-run-job button upon loading.
+                    if (spinner && spinner.parentNode) {
+                        const runButton = document.getElementById('csig-run-job');
+                        if (runButton) {
+                            runButton.disabled = false;
+                        }
+
+                        spinner.parentNode.removeChild(spinner);
+                    }
                     try {
                         const styleElement = document.createElement('style');
                         styleElement.textContent = '#wpadminbar { display: none !important; }';
@@ -358,11 +397,12 @@ class Job_Post_Type {
                         console.log('Could not inject styles (CORS)');
                     }
                 };
-                
+
+                iframeContainer.appendChild(iframe);
                 currentIframe = iframe;
                 return iframe;
             }
-            
+
             function applyDimensions(dimensions) {
                 const iframe = ensureIframe();
                 if (!iframe) {
@@ -371,7 +411,7 @@ class Job_Post_Type {
                 iframe.style.width = dimensions.width + 'px';
                 iframe.style.height = dimensions.height + 'px';
             }
-            
+
             function applyScale(dimensions) {
                 if (!iframeWrapper || !iframeContainer || !dimensions.width) {
                     return;
@@ -387,7 +427,7 @@ class Job_Post_Type {
                 iframeContainer.style.height = dimensions.height + 'px';
                 iframeWrapper.style.height = (dimensions.height * scale) + 'px';
             }
-            
+
             function handlePreviewModeChange() {
                 const mode = previewModeSelect ? previewModeSelect.value : 'desktop';
                 if (customDimensions) {
@@ -399,7 +439,7 @@ class Job_Post_Type {
                 applyDimensions(dimensions);
                 applyScale(dimensions);
             }
-            
+
             // Initial load
             if (previewModeSelect) {
                 handlePreviewModeChange();
@@ -407,17 +447,20 @@ class Job_Post_Type {
                 if (customWidth) customWidth.addEventListener('input', handlePreviewModeChange);
                 if (customHeight) customHeight.addEventListener('input', handlePreviewModeChange);
             }
-            
+
             window.addEventListener('resize', function() {
                 if (currentDimensions) {
                     applyScale(currentDimensions);
                 }
             });
-            
+
+
             // Make iframe available to the capture script
             window.csigCurrentIframe = function() {
                 return currentIframe;
             };
+
+
         });
         </script>
         <?php
