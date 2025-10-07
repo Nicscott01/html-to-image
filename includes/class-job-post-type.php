@@ -698,14 +698,14 @@ class Job_Post_Type {
                 </button>
             </div>
             <?php if (!empty($generated_files)) : ?>
-                <ul class="csig-generated-files" style="margin: 5px 0 0 0; padding-left: 15px; font-size: 12px;">
+                <ul class="csig-generated-files" style="margin: 15px 0 0 0; padding-left: 15px; font-size: 12px; max-height:300px; overflow:auto; border:1px solid #eee; background:#fafafa; border-radius:4px;">
                     <?php foreach ($generated_files as $url => $file) :
                         $filename = isset($file['filename']) ? $file['filename'] : basename($url);
                         $format = !empty($file['format']) ? strtoupper($file['format']) : __('File', 'csig');
                         $generated_at = !empty($file['generated_at']) ? date_i18n(get_option('date_format') . ' ' . get_option('time_format'), strtotime($file['generated_at'])) : '';
                         $size = !empty($file['size']) ? size_format((int) $file['size']) : '';
                     ?>
-                    <li data-file-url="<?php echo esc_attr($url); ?>" style="margin-bottom: 6px;">
+                    <li data-file-url="<?php echo esc_attr($url); ?>" style="margin: 10px 0;">
                         <div>
                             <a href="<?php echo esc_url($url); ?>" target="_blank"><?php echo esc_html($filename); ?></a>
                             <span style="color: #666;">&mdash; <?php echo esc_html($format); ?><?php echo $size ? ' · ' . esc_html($size) : ''; ?><?php echo $generated_at ? ' · ' . esc_html($generated_at) : ''; ?></span>
