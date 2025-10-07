@@ -211,33 +211,39 @@ document.addEventListener('DOMContentLoaded', function() {
             statusText.textContent = `Found ${elements.length} element(s) with selector "${selector}". Loading images...`;
             progressBar.style.width = '30%';
 
-            // Wait for images to load with timeout
+            // Wait for images to load with timeout (longer timeout for retina support)
+            const isRetina = settings.retinaSupport || settings.pixelRatio > 2;
+            const imageTimeout = isRetina ? 8000 : 4000; // Per image timeout
+            const totalTimeout = isRetina ? 20000 : 10000; // Total timeout
+            
             await new Promise(resolve => {
                 const images = iframe.contentDocument.querySelectorAll('img');
                 let loadedCount = 0;
                 const totalImages = images.length;
                 let timeoutId;
                 
-                console.log('CSIG: Found', totalImages, 'images to load');
+                console.log('CSIG: Found', totalImages, 'images to load (retina:', isRetina, ', pixel ratio:', settings.pixelRatio, ')');
 
                 const finish = () => {
                     if (timeoutId) {
                         clearTimeout(timeoutId);
                     }
                     console.log('CSIG: Image loading complete (loaded:', loadedCount, '/', totalImages, ')');
-                    setTimeout(resolve, 1000); // Wait 1 second for final rendering
+                    const finalWait = isRetina ? 2000 : 1000; // Longer wait for retina
+                    setTimeout(resolve, finalWait);
                 };
 
                 if (totalImages === 0) {
-                    console.log('CSIG: No images found, waiting 1 second for final rendering');
-                    setTimeout(resolve, 1000);
+                    console.log('CSIG: No images found, waiting for final rendering');
+                    const finalWait = isRetina ? 2000 : 1000;
+                    setTimeout(resolve, finalWait);
                     return;
                 }
 
                 timeoutId = setTimeout(() => {
                     console.log('CSIG: Image loading timeout reached, proceeding anyway');
                     finish();
-                }, 8000);
+                }, totalTimeout);
 
                 const checkLoaded = (imageIndex, status) => {
                     loadedCount++;
@@ -263,7 +269,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 img.removeEventListener('error', errorHandler);
                                 checkLoaded(index, 'timeout');
                             }
-                        }, 4000);
+                        }, imageTimeout);
                     }
                 });
             });
@@ -281,6 +287,32 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 console.log('CSIG: Processing element', i + 1, '/', elements.length);
                 
+                // Debug: Check element dimensions and content
+                const rect = element.getBoundingClientRect();
+                console.log('CSIG: Element details:', {
+                    index: i,
+                    tagName: element.tagName,
+                    className: element.className,
+                    id: element.id,
+                    width: rect.width,
+                    height: rect.height,
+                    offsetWidth: element.offsetWidth,
+                    offsetHeight: element.offsetHeight,
+                    childElementCount: element.childElementCount,
+                    hasImages: element.querySelectorAll('img').length
+                });
+                
+                // Check if element is visible
+                const computedStyle = iframe.contentWindow.getComputedStyle(element);
+                if (computedStyle.display === 'none' || computedStyle.visibility === 'hidden' || computedStyle.opacity === '0') {
+                    console.warn('CSIG: Element is not visible, skipping:', {
+                        display: computedStyle.display,
+                        visibility: computedStyle.visibility,
+                        opacity: computedStyle.opacity
+                    });
+                    continue;
+                }
+                
                 // Look for custom filename attribute
                 const customFilename = element.getAttribute('csig-filename') || 
                                      element.getAttribute('data-csig-filename') ||
@@ -289,22 +321,79 @@ document.addEventListener('DOMContentLoaded', function() {
                 const sanitizedFilename = sanitizeFilename(customFilename);
                 
                 console.log('CSIG: Custom filename found:', customFilename, '-> sanitized:', sanitizedFilename);
+                
+                // Clear any selections or focus that might interfere with capture
+                try {
+                    if (iframe.contentWindow.getSelection) {
+                        iframe.contentWindow.getSelection().removeAllRanges();
+                    }
+                    if (iframe.contentDocument.activeElement && iframe.contentDocument.activeElement.blur) {
+                        iframe.contentDocument.activeElement.blur();
+                    }
+                } catch (clearError) {
+                    console.log('CSIG: Could not clear selections:', clearError);
+                }
 
                 // Generate PNG if needed
                 if (format === 'raster' || format === 'both') {
                     try {
-                        console.log('CSIG: Generating PNG for element', i + 1);
+                        console.log('CSIG: Generating PNG for element', i + 1, '(pixel ratio:', settings.pixelRatio, ')');
                         
-                        const pngData = await htmlToImage.toPng(element, {
-                            quality: 1,
-                            pixelRatio: settings.pixelRatio,
-                            useCORS: true,
-                            allowTaint: true,
-                            skipFonts: false,
-                            cacheBust: true
-                        });
+                        let pngData;
+                        let actualPixelRatio = settings.pixelRatio;
                         
-                        console.log('CSIG: PNG generated, sending to server...');
+                        // Progressive fallback for high pixel ratios
+                        try {
+                            // First attempt with requested pixel ratio
+                            pngData = await htmlToImage.toPng(element, {
+                                quality: parseFloat(settings.imageQuality) === 'high' ? 0.95 : parseFloat(settings.imageQuality) === 'ultra' ? 1 : 0.8,
+                                pixelRatio: actualPixelRatio,
+                                useCORS: true,
+                                allowTaint: true,
+                                skipFonts: false,
+                                cacheBust: true,
+                                backgroundColor: '#ffffff'
+                            });
+                        } catch (highResError) {
+                            console.warn('CSIG: High resolution failed, trying lower pixel ratio:', highResError);
+                            
+                            // If retina/high pixel ratio fails, try with reduced pixel ratio
+                            if (actualPixelRatio > 2) {
+                                actualPixelRatio = 2;
+                                console.log('CSIG: Retrying with pixel ratio:', actualPixelRatio);
+                                
+                                try {
+                                    pngData = await htmlToImage.toPng(element, {
+                                        quality: 0.9,
+                                        pixelRatio: actualPixelRatio,
+                                        useCORS: true,
+                                        allowTaint: true,
+                                        skipFonts: false,
+                                        cacheBust: true,
+                                        backgroundColor: '#ffffff'
+                                    });
+                                } catch (mediumResError) {
+                                    console.warn('CSIG: Medium resolution failed, trying pixel ratio 1:', mediumResError);
+                                    
+                                    // Final fallback to pixel ratio 1
+                                    actualPixelRatio = 1;
+                                    pngData = await htmlToImage.toPng(element, {
+                                        quality: 0.8,
+                                        pixelRatio: actualPixelRatio,
+                                        useCORS: false,
+                                        allowTaint: false,
+                                        skipFonts: true,
+                                        cacheBust: false,
+                                        backgroundColor: '#ffffff'
+                                    });
+                                }
+                            } else {
+                                // Re-throw if already at low pixel ratio
+                                throw highResError;
+                            }
+                        }
+                        
+                        console.log('CSIG: PNG generated successfully with pixel ratio:', actualPixelRatio);
 
                         const formData = new FormData();
                         formData.append('action', 'csig_save_image');
@@ -334,7 +423,16 @@ document.addEventListener('DOMContentLoaded', function() {
                             console.error('CSIG: PNG save failed:', pngResult);
                         }
                     } catch (error) {
-                        console.error('CSIG: PNG generation failed:', error);
+                        console.error('CSIG: PNG generation failed for element', i + 1, ':', error);
+                        console.error('CSIG: Failed element details:', {
+                            tagName: element.tagName,
+                            className: element.className,
+                            id: element.id,
+                            offsetWidth: element.offsetWidth,
+                            offsetHeight: element.offsetHeight,
+                            pixelRatio: settings.pixelRatio,
+                            retinaSupport: settings.retinaSupport
+                        });
                     }
                 }
 
@@ -343,14 +441,34 @@ document.addEventListener('DOMContentLoaded', function() {
                     try {
                         console.log('CSIG: Generating PDF for element', i + 1);
                         
-                        const canvas = await htmlToImage.toCanvas(element, {
-                            quality: 1,
-                            pixelRatio: 2,
-                            useCORS: true,
-                            allowTaint: true,
-                            skipFonts: false,
-                            cacheBust: true
-                        });
+                        // Use a reasonable pixel ratio for PDF (not too high to avoid memory issues)
+                        const pdfPixelRatio = Math.min(settings.pixelRatio, 3);
+                        
+                        let canvas;
+                        try {
+                            canvas = await htmlToImage.toCanvas(element, {
+                                quality: 1,
+                                pixelRatio: pdfPixelRatio,
+                                useCORS: true,
+                                allowTaint: true,
+                                skipFonts: false,
+                                cacheBust: true,
+                                backgroundColor: '#ffffff'
+                            });
+                        } catch (pdfError) {
+                            console.warn('CSIG: PDF generation at high resolution failed, trying lower resolution:', pdfError);
+                            
+                            // Fallback to lower resolution for PDF
+                            canvas = await htmlToImage.toCanvas(element, {
+                                quality: 0.9,
+                                pixelRatio: 2,
+                                useCORS: true,
+                                allowTaint: true,
+                                skipFonts: false,
+                                cacheBust: true,
+                                backgroundColor: '#ffffff'
+                            });
+                        }
 
                         const { jsPDF } = window.jspdf;
                         const pdf = new jsPDF({
@@ -394,6 +512,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     } catch (error) {
                         console.error('CSIG: PDF generation failed:', error);
                     }
+                }
+                
+                // Add delay between elements to prevent timing issues, especially with retina support
+                if (i < elements.length - 1) { // Don't delay after the last element
+                    const delayTime = isRetina ? 1000 : 500; // Longer delay for retina
+                    console.log('CSIG: Waiting', delayTime, 'ms before next element...');
+                    await new Promise(resolve => setTimeout(resolve, delayTime));
                 }
             }
 

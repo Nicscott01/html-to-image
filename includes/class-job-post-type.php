@@ -1038,13 +1038,17 @@ class Job_Post_Type {
             }
         }
         
+        // Calculate pixel ratio based on quality and retina support
+        $base_pixel_ratio = $quality_map[$image_quality] ?? 2;
+        $final_pixel_ratio = $retina_support ? $base_pixel_ratio * 2 : $base_pixel_ratio;
+        
         return array(
             'url' => $url,
             'selector' => $selector,
             'outputFormat' => $output_format,
             'saveFolder' => $save_folder,
             'imageQuality' => $image_quality,
-            'pixelRatio' => $quality_map[$image_quality] ?? 2,
+            'pixelRatio' => $final_pixel_ratio,
             'retinaSupport' => $retina_support,
             'overwriteFiles' => $overwrite_files,
             'iframeWidth' => $final_width,
