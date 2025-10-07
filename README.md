@@ -12,5 +12,7 @@ This plugin doesn't have any templating built in. Instead it relies on your them
 - Save on cron schedule so images are automatically updated
 
 ## Release Notes
+### Version 1.1.0
+- No, this is the first real release.
 ### Version 1.0.5
 - This is the first real release. 

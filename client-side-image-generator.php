@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Client Side Image Generator
  * Description: Generate images from HTML elements using the .csig-card selector by default
- * Version: 1.0.5
+ * Version: 1.1.0
  */
 
 if (!defined('ABSPATH')) {
