@@ -107,8 +107,9 @@ class Job_Post_Type {
         if (($hook === 'post.php' || $hook === 'post-new.php') && 
             ($post && $post->post_status === 'publish')) {
             
-            wp_enqueue_script('csig-html-to-image', CSIG_PLUGIN_URL . 'assets/js/vendor/html-to-image.js', [], CSIG_VERSION, true);
-            wp_enqueue_script('csig-job-editor', CSIG_PLUGIN_URL . 'assets/js/csig-job-editor.js', ['csig-html-to-image'], CSIG_VERSION, true);
+            wp_enqueue_script('html-to-image', CSIG_PLUGIN_URL . 'assets/js/html-to-image.js', [], CSIG_VERSION, true);
+            //wp_enqueue_script('jspdf', 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/3.0.3/jspdf.umd.min.js', [], CSIG_VERSION, true);
+            wp_enqueue_script('csig-job-editor', CSIG_PLUGIN_URL . 'assets/js/csig-job-editor.js', ['html-to-image'], CSIG_VERSION, true);
             
             $job_settings = self::get_job_settings($post->ID);
             
@@ -151,11 +152,7 @@ class Job_Post_Type {
         // Just add a target div for the iframe - the sidebar controls will populate it
         ?>
         <div id="csig-iframe-wrapper" style="overflow: hidden; max-width: 100%;">
-            <div id="csig-iframe-container" style="margin: 20px 0;">
-                <div class="csig-iframe-loading" role="status" aria-live="polite" aria-busy="true">
-                    <span class="csig-spinner" aria-hidden="true"></span>
-                    <span class="csig-loading-text"><?php esc_html_e('Loading preview...', 'csig'); ?></span>
-                </div>
+            <div id="csig-iframe-container" style="margin: 20px 0; background-color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #ddd; position: relative;">
                 <!-- Iframe will be inserted here by the sidebar controls -->
             </div>
         </div>
@@ -303,7 +300,7 @@ class Job_Post_Type {
         </div>
         
         <!-- Run Job Button -->
-        <button type="button" class="button button-primary" id="csig-run-job" style="width: 100%; margin-bottom: 10px;">
+        <button type="button" class="button button-primary" id="csig-run-job" style="width: 100%; margin-bottom: 10px;" disabled>
             <?php _e('Generate Images Now', 'csig'); ?>
         </button>
         <div id="csig-settings-changed-notice" style="display: none; color: #d63638; font-size: 11px; margin-bottom: 15px;">
@@ -327,7 +324,40 @@ class Job_Post_Type {
         </div>
         
         <script>
+        // Define iframe ready callback globally first
+        window.csigIframeReady = false;
+        window.csigLocalStateHandlers = [];
+        
+        window.csigMarkIframeReady = function() {
+            console.log('CSIG: markIframeReady called globally');
+            window.csigIframeReady = true;
+            
+            // Enable button immediately with force
+            const runButton = document.getElementById('csig-run-job');
+            if (runButton) {
+                runButton.disabled = false;
+                runButton.removeAttribute('disabled');
+                runButton.classList.remove('disabled');
+                runButton.textContent = '<?php echo esc_js(__('Generate Images Now', 'csig')); ?>';
+                console.log('CSIG: Button enabled by global iframe ready');
+                console.log('CSIG: Button state after enable - disabled:', runButton.disabled, 'classes:', Array.from(runButton.classList));
+            } else {
+                console.error('CSIG: Run button not found when trying to enable');
+            }
+            
+            // Call any local state handlers that have been registered
+            window.csigLocalStateHandlers.forEach(function(handler) {
+                try {
+                    handler();
+                } catch(e) {
+                    console.error('CSIG: Error in local state handler:', e);
+                }
+            });
+        };
+        
         document.addEventListener('DOMContentLoaded', function() {
+            console.log('CSIG: Main DOMContentLoaded fired');
+            
             const previewModeSelect = document.getElementById('csig-preview-mode');
             const customDimensions = document.getElementById('csig-custom-dimensions');
             const customWidth = document.getElementById('csig-custom-width');
@@ -336,11 +366,15 @@ class Job_Post_Type {
             const iframeWrapper = document.getElementById('csig-iframe-wrapper');
             const iframeContainer = document.getElementById('csig-iframe-container');
             
+            // Test if button exists immediately
+            const testButton = document.getElementById('csig-run-job');
+            console.log('CSIG: Button found in main script:', !!testButton);
+
             let currentIframe = null;
             let currentDimensions = null;
-            
+
             function getDimensions(mode) {
-                switch(mode) {
+                switch (mode) {
                     case 'tablet':
                         return { width: 768, height: 1024 };
                     case 'mobile':
@@ -354,14 +388,14 @@ class Job_Post_Type {
                         return { width: 1200, height: 800 };
                 }
             }
-            
+
             function updateViewportSize(mode) {
                 const dims = getDimensions(mode);
                 if (viewportSize) {
                     viewportSize.textContent = dims.width + '×' + dims.height + 'px';
                 }
             }
-            
+
             function ensureIframe() {
                 const loadingIndicator = iframeContainer ? iframeContainer.querySelector('.csig-iframe-loading') : null;
                 const loadingText = loadingIndicator ? loadingIndicator.querySelector('.csig-loading-text') : null;
@@ -377,13 +411,37 @@ class Job_Post_Type {
                     return null;
                 }
 
-                if (loadingIndicator) {
-                    loadingIndicator.classList.remove('csig-is-hidden');
-                    loadingIndicator.setAttribute('aria-busy', 'true');
-                    if (loadingText) {
-                        loadingText.textContent = '<?php echo esc_js(__('Loading preview...', 'csig')); ?>';
-                    }
+                // Create spinner element
+                const spinner = document.createElement('div');
+                spinner.id = 'csig-iframe-spinner';
+                spinner.style.position = 'absolute';
+                spinner.style.top = '50%';
+                spinner.style.left = '50%';
+                spinner.style.transform = 'translate(-50%, -50%)';
+                spinner.style.border = '4px solid #f3f3f3';
+                spinner.style.borderTop = '4px solid #3498db';
+                spinner.style.borderRadius = '50%';
+                spinner.style.width = '30px';
+                spinner.style.height = '30px';
+                spinner.style.animation = 'spin 1s linear infinite';
+
+                // Append spinner animation style if not present
+                if (!document.getElementById('csig-spinner-style')) {
+                    const style = document.createElement('style');
+                    style.id = 'csig-spinner-style';
+                    style.textContent = `
+                        @keyframes spin {
+                            0% { transform: rotate(0deg); }
+                            100% { transform: rotate(360deg); }
+                        }
+                    `;
+                    document.head.appendChild(style);
                 }
+
+                // Ensure container is positioned correctly
+                iframeContainer.style.position = 'relative';
+                iframeContainer.innerHTML = '';
+                iframeContainer.appendChild(spinner);
 
                 const iframe = document.createElement('iframe');
                 iframe.id = 'csig-preview-iframe';
@@ -393,18 +451,20 @@ class Job_Post_Type {
                 iframe.style.display = 'block';
                 iframe.style.maxWidth = '100%';
 
-                Array.from(iframeContainer.children).forEach((child) => {
-                    if (!child.classList || !child.classList.contains('csig-iframe-loading')) {
-                        child.remove();
+                iframe.onload = function() {
+                    // Remove spinner once loaded
+                    console.log('CSIG: Iframe loaded, enabling button');
+                    if (spinner && spinner.parentNode) {
+                        spinner.parentNode.removeChild(spinner);
                     }
-                });
-                iframeContainer.appendChild(iframe);
-
-                iframe.addEventListener('load', function() {
-                    if (loadingIndicator) {
-                        loadingIndicator.classList.add('csig-is-hidden');
-                        loadingIndicator.setAttribute('aria-busy', 'false');
+                    
+                    // Mark iframe as ready
+                    if (window.csigMarkIframeReady) {
+                        window.csigMarkIframeReady();
+                    } else {
+                        console.error('CSIG: csigMarkIframeReady function not found');
                     }
+                    
                     try {
                         const styleElement = document.createElement('style');
                         styleElement.textContent = '#wpadminbar { display: none !important; }';
@@ -412,22 +472,13 @@ class Job_Post_Type {
                     } catch(e) {
                         console.log('Could not inject styles (CORS)');
                     }
-                });
+                };
 
-                iframe.addEventListener('error', function() {
-                    if (loadingIndicator) {
-                        loadingIndicator.classList.remove('csig-is-hidden');
-                        loadingIndicator.setAttribute('aria-busy', 'false');
-                        if (loadingText) {
-                            loadingText.textContent = '<?php echo esc_js(__('Unable to load preview', 'csig')); ?>';
-                        }
-                    }
-                });
-
+                iframeContainer.appendChild(iframe);
                 currentIframe = iframe;
                 return iframe;
             }
-            
+
             function applyDimensions(dimensions) {
                 const iframe = ensureIframe();
                 if (!iframe) {
@@ -436,7 +487,7 @@ class Job_Post_Type {
                 iframe.style.width = dimensions.width + 'px';
                 iframe.style.height = dimensions.height + 'px';
             }
-            
+
             function applyScale(dimensions) {
                 if (!iframeWrapper || !iframeContainer || !dimensions.width) {
                     return;
@@ -452,7 +503,7 @@ class Job_Post_Type {
                 iframeContainer.style.height = dimensions.height + 'px';
                 iframeWrapper.style.height = (dimensions.height * scale) + 'px';
             }
-            
+
             function handlePreviewModeChange() {
                 const mode = previewModeSelect ? previewModeSelect.value : 'desktop';
                 if (customDimensions) {
@@ -464,7 +515,7 @@ class Job_Post_Type {
                 applyDimensions(dimensions);
                 applyScale(dimensions);
             }
-            
+
             // Initial load
             if (previewModeSelect) {
                 handlePreviewModeChange();
@@ -472,17 +523,20 @@ class Job_Post_Type {
                 if (customWidth) customWidth.addEventListener('input', handlePreviewModeChange);
                 if (customHeight) customHeight.addEventListener('input', handlePreviewModeChange);
             }
-            
+
             window.addEventListener('resize', function() {
                 if (currentDimensions) {
                     applyScale(currentDimensions);
                 }
             });
-            
+
+
             // Make iframe available to the capture script
             window.csigCurrentIframe = function() {
                 return currentIframe;
             };
+
+
         });
         </script>
         <?php
@@ -601,6 +655,16 @@ class Job_Post_Type {
                 </td>
             </tr>
             <tr>
+                <th><label for="csig_output_format"><?php _e('Output Format', 'csig'); ?></label></th>
+                <td>
+                    <select id="csig_output_format" name="csig_output_format">
+                        <option value="raster" <?php selected($output_format, 'raster'); ?>><?php _e('Raster (PNG)', 'csig'); ?></option>
+                        <!--option value="vector" <?php selected($output_format, 'vector'); ?>><?php _e('Vector (PDF)', 'csig'); ?></option-->
+                        <!--option value="both" <?php selected($output_format, 'both'); ?>><?php _e('Both', 'csig'); ?></option-->
+                    </select>
+                </td>
+            </tr>
+            <tr>
                 <th><label for="csig_image_quality"><?php _e('Image Quality', 'csig'); ?></label></th>
                 <td>
                     <select id="csig_image_quality" name="csig_image_quality">
@@ -640,16 +704,23 @@ class Job_Post_Type {
         
         <script>
         document.addEventListener('DOMContentLoaded', function() {
-
+            // Get elements for this section
+            const responsiveOptions = document.getElementById('csig-responsive-options');
+            const presetSelect = document.getElementById('csig-viewport-preset');
+            const customSize = document.getElementById('csig-custom-size');
             
             function toggleResponsiveOptions() {
                 const isResponsive = document.querySelector('input[name="csig_iframe_mode"]:checked').value === 'responsive';
-                responsiveOptions.style.display = isResponsive ? 'block' : 'none';
+                if (responsiveOptions) {
+                    responsiveOptions.style.display = isResponsive ? 'block' : 'none';
+                }
             }
             
             function toggleCustomSize() {
-                const isCustom = presetSelect.value === 'custom';
-                customSize.style.display = isCustom ? 'block' : 'none';
+                const isCustom = presetSelect ? presetSelect.value === 'custom' : false;
+                if (customSize) {
+                    customSize.style.display = isCustom ? 'block' : 'none';
+                }
             }
             
             
@@ -660,24 +731,61 @@ class Job_Post_Type {
             
             const runButton = document.getElementById('csig-run-job');
             const notice = document.getElementById('csig-settings-changed-notice');
-            let originalRunText = runButton ? runButton.textContent : '';
+            let originalRunText = '<?php echo esc_js(__('Generate Images Now', 'csig')); ?>';
             let dirty = false;
+            let iframeReady = false;
+            
+            function updateButtonState() {
+                if (!runButton) return;
+                
+                console.log('CSIG: Updating button state - dirty:', dirty, 'iframeReady:', iframeReady);
+                
+                if (dirty) {
+                    runButton.disabled = true;
+                    runButton.classList.add('disabled');
+                    runButton.textContent = '<?php echo esc_js(__('Save job to enable capture', 'csig')); ?>';
+                } else if (!iframeReady) {
+                    runButton.disabled = true;
+                    runButton.classList.add('disabled');
+                    runButton.textContent = '<?php echo esc_js(__('Waiting for preview to load...', 'csig')); ?>';
+                } else {
+                    runButton.disabled = false;
+                    runButton.classList.remove('disabled');
+                    runButton.textContent = originalRunText;
+                }
+            }
             
             function markDirty() {
                 if (dirty) {
                     return;
                 }
+                console.log('CSIG: Settings changed, marking as dirty');
                 dirty = true;
-                if (runButton) {
-                    runButton.disabled = true;
-                    runButton.classList.add('disabled');
-                    originalRunText = originalRunText || runButton.textContent;
-                    runButton.textContent = '<?php echo esc_js(__('Save job to enable capture', 'csig')); ?>';
-                }
+                updateButtonState();
                 if (notice) {
                     notice.style.display = 'block';
                 }
             }
+            
+            // Local iframe ready handler - updates local state
+            function handleIframeReady() {
+                console.log('CSIG: Local iframe ready handler called');
+                iframeReady = true;
+                updateButtonState();
+            }
+            
+            // Register our local handler with the global system
+            if (window.csigLocalStateHandlers) {
+                window.csigLocalStateHandlers.push(handleIframeReady);
+            }
+            
+            // If iframe is already ready, call our handler immediately
+            if (window.csigIframeReady) {
+                handleIframeReady();
+            }
+            
+            // Initial button state
+            updateButtonState();
             
             settingsFields.forEach(field => {
                 field.addEventListener('input', markDirty);
@@ -709,22 +817,6 @@ class Job_Post_Type {
             echo esc_html($run_count);
             ?>
         </div>
-        
-        <div class="misc-pub-section">
-            <strong><?php _e('Last Generated Files:', 'csig'); ?></strong><br>
-            <?php
-            $last_files = get_post_meta($post->ID, '_csig_last_files', true);
-            if ($last_files && is_array($last_files)) {
-                echo '<ul style="margin: 5px 0 0 0; padding-left: 15px; font-size: 12px;">';
-                foreach ($last_files as $file) {
-                    echo '<li><a href="' . esc_url($file) . '" target="_blank">' . esc_html(basename($file)) . '</a></li>';
-                }
-                echo '</ul>';
-            } else {
-                _e('None yet', 'csig');
-            }
-            ?>
-        </div>
 
         <?php
         $generated_files = self::get_generated_files($post->ID);
@@ -751,14 +843,14 @@ class Job_Post_Type {
                 </button>
             </div>
             <?php if (!empty($generated_files)) : ?>
-                <ul class="csig-generated-files" style="margin: 5px 0 0 0; padding-left: 15px; font-size: 12px;">
+                <ul class="csig-generated-files" style="margin: 15px 0 0 0; padding-left: 15px; font-size: 12px; max-height:300px; overflow:auto; border:1px solid #eee; background:#fafafa; border-radius:4px;">
                     <?php foreach ($generated_files as $url => $file) :
                         $filename = isset($file['filename']) ? $file['filename'] : basename($url);
                         $format = !empty($file['format']) ? strtoupper($file['format']) : __('File', 'csig');
                         $generated_at = !empty($file['generated_at']) ? date_i18n(get_option('date_format') . ' ' . get_option('time_format'), strtotime($file['generated_at'])) : '';
                         $size = !empty($file['size']) ? size_format((int) $file['size']) : '';
                     ?>
-                    <li data-file-url="<?php echo esc_attr($url); ?>" style="margin-bottom: 6px;">
+                    <li data-file-url="<?php echo esc_attr($url); ?>" style="margin: 10px 0;">
                         <div>
                             <a href="<?php echo esc_url($url); ?>" target="_blank"><?php echo esc_html($filename); ?></a>
                             <span style="color: #666;">&mdash; <?php echo esc_html($format); ?><?php echo $size ? ' · ' . esc_html($size) : ''; ?><?php echo $generated_at ? ' · ' . esc_html($generated_at) : ''; ?></span>
@@ -1041,13 +1133,17 @@ class Job_Post_Type {
             }
         }
         
+        // Calculate pixel ratio based on quality and retina support
+        $base_pixel_ratio = $quality_map[$image_quality] ?? 2;
+        $final_pixel_ratio = $retina_support ? $base_pixel_ratio * 2 : $base_pixel_ratio;
+        
         return array(
             'url' => $url,
             'selector' => $selector,
             'outputFormat' => 'raster',
             'saveFolder' => $save_folder,
             'imageQuality' => $image_quality,
-            'pixelRatio' => $quality_map[$image_quality] ?? 2,
+            'pixelRatio' => $final_pixel_ratio,
             'retinaSupport' => $retina_support,
             'overwriteFiles' => $overwrite_files,
             'iframeWidth' => $final_width,
@@ -1064,11 +1160,6 @@ class Job_Post_Type {
         // Increment run count
         $run_count = get_post_meta($job_id, '_csig_run_count', true) ?: 0;
         update_post_meta($job_id, '_csig_run_count', $run_count + 1);
-
-        // Store last generated files
-        if (!empty($generated_files)) {
-            update_post_meta($job_id, '_csig_last_files', $generated_files);
-        }
     }
 
     /**
