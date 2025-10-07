@@ -699,22 +699,6 @@ class Job_Post_Type {
             echo esc_html($run_count);
             ?>
         </div>
-        
-        <div class="misc-pub-section">
-            <strong><?php _e('Last Generated Files:', 'csig'); ?></strong><br>
-            <?php
-            $last_files = get_post_meta($post->ID, '_csig_last_files', true);
-            if ($last_files && is_array($last_files)) {
-                echo '<ul style="margin: 5px 0 0 0; padding-left: 15px; font-size: 12px;">';
-                foreach ($last_files as $file) {
-                    echo '<li><a href="' . esc_url($file) . '" target="_blank">' . esc_html(basename($file)) . '</a></li>';
-                }
-                echo '</ul>';
-            } else {
-                _e('None yet', 'csig');
-            }
-            ?>
-        </div>
 
         <?php
         $generated_files = self::get_generated_files($post->ID);
@@ -1065,11 +1049,6 @@ class Job_Post_Type {
         // Increment run count
         $run_count = get_post_meta($job_id, '_csig_run_count', true) ?: 0;
         update_post_meta($job_id, '_csig_run_count', $run_count + 1);
-
-        // Store last generated files
-        if (!empty($generated_files)) {
-            update_post_meta($job_id, '_csig_last_files', $generated_files);
-        }
     }
 
     /**
