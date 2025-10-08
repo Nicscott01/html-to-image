@@ -159,6 +159,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         const url = csigJobData.jobUrl;
         const settings = csigJobData.settings;
+        const format = settings.format || 'raster';
         
         // Use existing iframe instead of creating new one
         const iframe = window.csigCurrentIframe ? window.csigCurrentIframe() : null;
