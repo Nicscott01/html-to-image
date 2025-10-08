@@ -3,7 +3,7 @@
  * Plugin Name: HTML to Image Generator
  * Plugin URI: https://www.crearewebsolutions.com/plugin/html-to-image-generator/
  * Description: Generate images from HTML elements on your website. Perfect for email signatures, business cards, and marketing materials.
- * Version: 1.1.1
+ * Version: 1.1.2
  * Author: Nic Scott
  * Author URI: https://www.crearewebsolutions.com/
  * License: GPLv2 or later
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 // Define plugin constants
 define('CSIG_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CSIG_PLUGIN_URL', plugin_dir_url(__FILE__));
-define('CSIG_VERSION', '1.1.1');
+define('CSIG_VERSION', '1.1.2');
 
 // Load the main plugin class
 require_once CSIG_PLUGIN_DIR . 'includes/class-plugin.php';
