@@ -637,6 +637,7 @@ class Job_Post_Type {
         $image_quality = get_post_meta($post->ID, '_csig_image_quality', true) ?: 'high';
         $save_folder = get_post_meta($post->ID, '_csig_save_folder', true) ?: 'csig-images';
         $retina_support = get_post_meta($post->ID, '_csig_retina_support', true);
+        $output_format = get_post_meta($post->ID, '_csig_output_format', true) ?: 'raster';
 
         ?>
         <table class="form-table csig-job-settings">
