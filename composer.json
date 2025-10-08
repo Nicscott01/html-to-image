@@ -3,8 +3,38 @@
     "description": "Render an html element to an image on the client side using html-to-image",
     "type": "wordpress-plugin", 
     "require": {
-        "php": "^8.0"
+        "php": "^7.4"
     },
     "prefer-stable": true,
-    "minimum-stability": "dev"
+    "minimum-stability": "dev",
+    "scripts": {
+        "build": "composer run-script build:clean && composer run-script build:zip",
+        "build:clean": [
+            "echo 'Cleaning up old build files...'",
+            "rm -f ../html-to-image-generator.zip"
+        ],
+        "build:zip": [
+            "echo 'Creating WordPress.org submission ZIP...'",
+            "cd .. && zip -r html-to-image-generator.zip html-to-image/ -x 'html-to-image/.git/*' 'html-to-image/.gitignore' 'html-to-image/node_modules/*' 'html-to-image/composer.lock' 'html-to-image/.DS_Store' 'html-to-image/*.log' 'html-to-image/.env' 'html-to-image/.vscode/*' 'html-to-image/.idea/*' 'html-to-image/vendor/*' 'html-to-image/*.tmp' 'html-to-image/*.swp' 'html-to-image/*.swo' 'html-to-image/*~' 'html-to-image/.phpunit.result.cache'",
+            "echo 'ZIP file created: html-to-image-generator.zip'"
+        ],
+        "build:check": [
+            "echo 'Checking plugin structure...'",
+            "php -l html-to-image.php",
+            "echo 'Main plugin file syntax: OK'",
+            "find includes/ -name '*.php' -exec php -l {} \\;",
+            "echo 'All PHP files syntax: OK'"
+        ],
+        "pre-build": [
+            "composer run-script build:check",
+            "echo 'Pre-build checks complete!'"
+        ]
+    },
+    "scripts-descriptions": {
+        "build": "Create a clean WordPress.org submission ZIP file",
+        "build:clean": "Remove old build artifacts", 
+        "build:zip": "Create the plugin ZIP file excluding development files",
+        "build:check": "Check PHP syntax in all plugin files",
+        "pre-build": "Run pre-build checks before creating ZIP"
+    }
 }

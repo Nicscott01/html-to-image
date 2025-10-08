@@ -15,11 +15,23 @@ class Settings {
     }
     
     public function register_settings() {
-        // Global settings
-        register_setting( 'csig_global_settings', 'csig_default_save_folder' );
-        register_setting( 'csig_global_settings', 'csig_default_image_quality' );
-        register_setting( 'csig_global_settings', 'csig_default_retina_support' );
-        register_setting( 'csig_global_settings', 'csig_default_selector' );
+        // Global settings with proper sanitization
+        register_setting( 'csig_global_settings', 'csig_default_save_folder', array(
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => 'csig-images'
+        ));
+        register_setting( 'csig_global_settings', 'csig_default_image_quality', array(
+            'sanitize_callback' => array( $this, 'sanitize_image_quality' ),
+            'default' => 'high'
+        ));
+        register_setting( 'csig_global_settings', 'csig_default_retina_support', array(
+            'sanitize_callback' => array( $this, 'sanitize_checkbox' ),
+            'default' => '1'
+        ));
+        register_setting( 'csig_global_settings', 'csig_default_selector', array(
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => '.csig-card'
+        ));
         
         add_settings_section(
             'csig_global_settings_section',
@@ -99,6 +111,21 @@ class Settings {
     public function default_retina_support_callback() {
         $value = get_option( 'csig_default_retina_support', '1' );
         echo '<label><input type="checkbox" name="csig_default_retina_support" value="1"' . checked( $value, '1', false ) . ' /> ' . __( 'Enable Retina/High-DPI support by default', 'csig' ) . '</label>';
+    }
+    
+    /**
+     * Sanitize image quality option
+     */
+    public function sanitize_image_quality( $value ) {
+        $valid_options = array( 'low', 'high', 'ultra' );
+        return in_array( $value, $valid_options, true ) ? $value : 'high';
+    }
+    
+    /**
+     * Sanitize checkbox value
+     */
+    public function sanitize_checkbox( $value ) {
+        return $value === '1' ? '1' : '0';
     }
     
     public function get_global_defaults() {

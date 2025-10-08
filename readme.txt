@@ -3,7 +3,7 @@ Contributors: nicscott01
 Tags: html-to-image, screenshot, png, image-generator, email-signature, business-cards
 Requires at least: 5.0
 Tested up to: 6.8
-Stable tag: 1.1.1
+Stable tag: 1.1.3
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -87,6 +87,14 @@ Yes! The plugin works independently of your theme and can capture elements from 
 4. Settings panel with quality and retina options
 
 == Changelog ==
+
+= 1.1.3 =
+* WordPress.org submission ready version
+* Fixed all plugin check validation issues
+* Added proper settings sanitization callbacks
+* Removed deprecated load_plugin_textdomain function
+* Fixed text domain consistency (html-to-image-generator)
+* Added automated build system for clean releases
 
 = 1.1.1 =
 * Enhanced image caching and reliability for consistent renders

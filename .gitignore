@@ -1,2 +1,15 @@
-node_modules/
-vendor/
+node_modules/node_modules/
+
+composer.lockvendor/
+.DS_Store
+*.log
+.env
+.vscode/
+.idea/
+*.zip
+/vendor/
+*.tmp
+*.swp
+*.swo
+*~
+.phpunit.result.cache

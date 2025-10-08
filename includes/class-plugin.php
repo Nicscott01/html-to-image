@@ -35,8 +35,7 @@ class Plugin {
         $this->ajax = new Ajax($this->settings);
         
         // Plugin hooks
-        add_action('init', array($this, 'load_textdomain'));
-        register_activation_hook(CSIG_PLUGIN_DIR . 'client-side-image-generator.php', array($this, 'activate'));
+        register_activation_hook(CSIG_PLUGIN_DIR . 'html-to-image.php', array($this, 'activate'));
     }
     
     private function load_dependencies() {
@@ -44,10 +43,6 @@ class Plugin {
         require_once CSIG_PLUGIN_DIR . 'includes/class-job-post-type.php';
         require_once CSIG_PLUGIN_DIR . 'includes/class-admin.php';
         require_once CSIG_PLUGIN_DIR . 'includes/class-ajax.php';
-    }
-    
-    public function load_textdomain() {
-        load_plugin_textdomain('csig', false, dirname(plugin_basename(CSIG_PLUGIN_DIR . 'client-side-image-generator.php')) . '/languages/');
     }
     
     public function activate() {

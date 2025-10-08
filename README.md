@@ -69,6 +69,8 @@ Add filename attributes to your HTML elements:
 
 
 ## Release Notes
+### Version 1.1.3
+- Wordpress.org release version
 ### Version 1.1.2
 - Change main plugin file name to match updated name.
 ### Version 1.1.1 
